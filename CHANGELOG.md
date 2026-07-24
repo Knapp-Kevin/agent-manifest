@@ -2,6 +2,53 @@
 
 All notable changes to Agent Manifest are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Spec changes are marked **[SPEC]**; SDK changes are marked **[SDK]**.
 
+## [Unreleased]
+
+### Documentation
+
+**[SDK]** `LIMITATIONS.md`: document that **Azure TDX is not supported for offline attestation** (hardware-confirmed). Azure runs TDX behind the Hyper-V paravisor, so the guest gets no signed DCAP quote — only a MAC'd `TDREPORT` via the vTPM — and rooting that as genuine silicon needs a networked service (Azure MAA). Offline TDX attestation is supported on non-paravisor guests (e.g. GCP C3); on Azure use SEV-SNP (`AzureCVMProvider`). Azure-MAA TDX support is tracked as a follow-up.
+
+## [0.5.0] — 2026-07-21
+
+Generalizes the verification API so cmcp and ca2a can delegate their full SNP/TDX/TPM crypto to this package (via PyPI) without changing behavior or rewriting their test fixtures. Backward compatible — all existing functions and signatures are unchanged.
+
+### Added
+
+**[SDK]** Generic, algorithm-agnostic certificate-chain verifier `verify_cert_chain(chain, trusted_roots, *, root_fingerprint_hash=SHA256)` (exported, with `CertChainError`). Verifies a leaf-first chain by honoring **each certificate's own** signature algorithm — ECDSA, RSASSA-PSS, or RSA PKCS#1 v1.5 — via `x509.Certificate.verify_directly_issued_by`, then pins the chain root by fingerprint. This is the shared primitive behind AMD VCEK, Intel PCK, and TPM AK chains; it lets both consumers replace their own chain verifiers (cmcp's synthetic RSA-PKCS1v15 ARK/ASK and ca2a's EC chains both verify through it). The AMD-specialized `verify_vcek_chain` is unchanged (kept as its hardware-validated specialization).
+
+### Changed
+
+**[SDK]** `parse_tdx_quote(quote, *, strict=True)` gained a `strict` flag. `strict=True` (default) keeps enforcing the production layout (`version==4`, `tee_type==0x81`); `strict=False` parses the header/body of an otherwise well-formed quote whose version/tee_type differ (e.g. consumers' synthetic vectors) without asserting production TDX identity. `verify_tdx_quote` is unaffected and always strict.
+
+## [0.4.0] — 2026-07-21
+
+Makes agent-manifest the canonical hardware-verification library for the org: SEV-SNP, TDX, and now TPM quote verification live here and are consumed by cmcp and ca2a via this PyPI package rather than duplicated per repo.
+
+### Added
+
+**[SDK]** Shared TPM 2.0 quote verifier (`agent_manifest._tpm_verify`, exported: `parse_tpm_quote`, `verify_tpm_quote`, `TpmQuote`, `TpmVerificationError`). Fail-closed appraisal of a `TPMS_ATTEST` quote: magic/type structural check, AK certificate chain to a caller-pinned trusted root, AK signature (ECDSA-P256 or RSA PKCS#1 v1.5 / SHA-256) over the attest blob, and constant-time qualifying-data (nonce) + PCR-digest binding checks. Wired into `verify_attestation_chain` (dispatch on `platform in {"tpm","aws-nitro"}`). Ported from ca2a's reference implementation so the three repos share one verifier. Caveat: exercised against synthetic self-consistent vectors; unlike the SEV-SNP/TDX paths it is not yet validated against a real TPM quote (follow-up).
+
+**[SDK]** Intel TDX DCAP quote verification (`agent_manifest._tdx_verify`, exported), **hardware-validated on a non-paravisor TDX guest (GCP C3)**. `TDXProvider` now uses the configfs-TSM `tdx_guest` provider, which returns a full remotely-verifiable DCAP quote (v4, ECDSA-P256) instead of a bare local `TDREPORT`. Verification checks the quote's attestation-key signature over the TD report, the QE report binding, the PCK signature over the QE report, and the PCK certificate chain up to the **pinned Intel SGX Root CA** (embedded; offline). Wired into `verify_attestation_chain`, which now returns `passed=True` for a TDX report only when the quote + PCK chain verify. Closes the TDX half of the "shipped the binding without verification" gap (#204/#228); the previous `/dev/tdx-guest` ioctl path (raw TDREPORT, no signature check, RTMR-extend that never happened) has been removed. Azure TDX (paravisor/vTPM-rooted) remains a follow-up.
+**[SDK]** `AzureCVMProvider` — hardware-attested manifest binding on Azure confidential VMs, validated on live SEV-SNP silicon (Azure DCasv5). Azure runs SNP behind a Hyper-V paravisor, so there is no `/dev/sev-guest`; the SNP report is read from the vTPM NV index `0x01400001` and the manifest hash is bound through the vTPM (PCR + AK-signed quote), with the AK rooted in silicon by the SNP report + VCEK chain. Auto-selected by `provider='auto'` on Azure.
+**[SDK]** AMD SEV-SNP signature backend (`agent_manifest._snp_verify`, exported): SNP report parsing, HCL-report splitting, the Azure `REPORT_DATA == sha256(runtime_data)` binding check, ECDSA-P384 report-signature verification against the VCEK, and VCEK ← ASK ← ARK chain verification (with optional pinned AMD root). Validated against a real SEV-SNP report.
+**[SDK]** `verify_attestation_chain` now performs real hardware-signature verification when VCEK/certificate material is supplied (previously always `NOT_IMPLEMENTED`); it returns `passed=True` only once the SNP signature and VCEK chain verify. Without VCEK material it still fails closed.
+
+### Changed
+
+**[SDK]** `SEVSNPProvider` now uses the kernel configfs-TSM interface (`/sys/kernel/config/tsm/report`, kernel 6.7+) for bare-metal / non-paravisor SNP guests; the previous `/dev/sev-guest` ioctl path (never hardware-validated, incorrect ABI) has been removed. **Hardware-validated on a non-paravisor SEV-SNP guest (GCP N2D, AMD Milan):** the manifest digest lands in the guest-controlled `REPORT_DATA` and the report verifies against the AMD VCEK chain. On Azure use `AzureCVMProvider`.
+**[SDK]** Attestation providers (`AzureCVMProvider`, `SEVSNPProvider`, `TDXProvider`, `OPAQUEProvider`, `TPMProvider`) and the chain verifier are now exported from `agent_manifest`; CLI `manifest attest` accepts `--provider azure-cvm`.
+**[SDK]** `OPAQUEProvider` is now explicitly **not implemented** and fails closed at construction. The OPAQUE managed attestation service is not generally available and the SDK never verified the TRACE claim it would return (no claim-signature or `service_measurement` check — issue #201 §5); shipping a path that looked verified but was not is worse than none. Use a locally-verifiable provider (SEV-SNP / TDX / Azure CVM) for Level 1+. The prior unverified HTTP flow has been removed.
+
+## [0.3.0] — 2026-07-15
+
+### Security
+
+**[SDK]** Verification can now bind trusted signing keys to authorized issuers. `VerificationContext.trusted_key_issuers` maps each trusted `key_id` to the issuer SPIFFE URIs allowed to sign with it; when supplied, a manifest whose signing key is not authorized for its declared `issuer` is rejected (fail-closed). Opt-in and backward compatible: an empty map preserves prior behavior.
+
+### Added
+
+**[SDK]** Delegation verification is now part of the public API: `verify_delegation_chain`, `verify_hitl_approval`, `delegation_depth_exceeded`, `DelegationHopSigner`, and `HitlApprovalSigner` are exported from `agent_manifest`. Downstream projects (for example agentrust-io/cA2A) call `verify_delegation_chain` to verify an inbound peer's delegation chain, so the two implementations stay aligned rather than duplicated. No behavior change; these were previously reachable only through the private `_delegation` module.
+
 ## [0.2.0] — 2026-06-30
 
 ### Security

@@ -40,6 +40,52 @@ Level 0 (software-only signing) is suitable for development and staging. It does
 - **Replace a secrets manager** — signing private keys must be stored in a secrets manager (Azure Key Vault, AWS Secrets Manager, HSM); do not store them on disk without protection
 - **Automatically rotate** — key rotation and manifest re-issuance must be triggered by the caller; the SDK provides the protocol but no scheduling
 
+## Azure confidential VMs: attestation is vTPM-rooted, not direct-silicon
+
+Azure confidential VMs (DCasv5/ECasv5 and similar) run AMD SEV-SNP behind a
+Hyper-V paravisor. This changes how attestation works, and `AzureCVMProvider`
+(not `SEVSNPProvider`) is the correct provider there:
+
+- There is no `/dev/sev-guest`. The SNP report is read from the vTPM NV index
+  `0x01400001` as an "HCLA" wrapper (the SNP report is embedded at offset 0x20).
+- The guest does **not** control the SNP `REPORT_DATA` field. The paravisor sets
+  it to `sha256(runtime_data)`, binding the vTPM attestation key (AK) to the
+  silicon. A guest therefore cannot place a manifest hash directly into the SNP
+  report.
+- The manifest hash is bound through the **vTPM** instead: it is extended into a
+  PCR and covered by an AK-signed quote. The trust chain a verifier checks is:
+
+      manifest hash -> vTPM PCR -> AK-signed quote
+          -> AK == the key bound in SNP REPORT_DATA
+          -> SNP report signed by the AMD VCEK
+          -> VCEK <- ASK <- ARK (AMD root)
+
+  What this means: on Azure the manifest hash is bound to a vTPM whose AK is
+  attested to genuine SNP silicon. This is one hop longer than direct-silicon
+  binding (where the guest writes the manifest hash into `REPORT_DATA` itself),
+  and the trust root is AMD via the VCEK chain plus the paravisor's binding of
+  the AK. `SEVSNPProvider` (direct `REPORT_DATA` binding via the configfs-TSM
+  interface) applies only to bare-metal / non-paravisor SNP guests.
+
+This provider and every link of the chain above were validated against a report
+captured from a live Azure SEV-SNP VM. Intel TDX is hardware-validated on a
+non-paravisor TDX guest (GCP C3): the configfs-TSM `tdx_guest` provider returns
+a DCAP quote whose ECDSA-P256 signature, QE binding, and PCK certificate chain
+(to the pinned Intel SGX Root CA) are verified.
+
+**Azure TDX is not supported for offline attestation** (confirmed on real
+Azure TDX hardware). Azure runs TDX behind the Hyper-V paravisor: there is no
+`/dev/tdx-guest` and the configfs-TSM `tdx_guest` provider does not register
+(the guest driver cannot bind), so the guest cannot obtain a signed DCAP quote.
+The only attestation surface is the vTPM/HCL blob, which carries a **MAC'd
+`TDREPORT`**, not a remotely-verifiable quote. Verifying a MAC'd `TDREPORT` as
+genuine silicon requires a networked attestation service (**Azure MAA**) or an
+on-platform Quoting Enclave, neither of which the SDK's offline verifier can
+use. Azure-TDX support would therefore mean a networked MAA integration (a
+different trust model from the offline SNP/TDX paths) and is out of scope; it is
+tracked as a follow-up. Use SEV-SNP (`AzureCVMProvider`) on Azure, or a
+non-paravisor TDX guest (e.g. GCP C3) for offline TDX attestation.
+
 ## Hardware attestation scope: boot-time binding only
 
 Hardware attestation in this SDK proves **what was approved at agent startup**,
@@ -99,6 +145,6 @@ Hardware attestation adds latency at agent startup (not per-request):
 | TPM | 50–200 ms |
 | SEV-SNP | 10–50 ms |
 | TDX | 10–50 ms |
-| OPAQUE | 100–500 ms (network round-trip) |
+| OPAQUE | not implemented (managed service not GA; provider fails closed) |
 
 Manifest verification (signature check + hash comparison) is < 5 ms in all cases.

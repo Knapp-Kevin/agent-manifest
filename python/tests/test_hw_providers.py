@@ -13,8 +13,8 @@ Strategy:
   Integration markers: NEEDS_SEV_SNP, NEEDS_TDX, NEEDS_OPAQUE for real hardware.
 """
 import os
+import struct
 import sys
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -28,12 +28,15 @@ from agent_manifest._providers import AttestationReport, AttestationUnavailableE
 LINUX = sys.platform == "linux"
 
 NEEDS_SEV_SNP = pytest.mark.skipif(
-    not os.path.exists("/dev/sev-guest"),
-    reason="requires AMD SEV-SNP hardware (/dev/sev-guest)",
+    not (os.path.exists("/sys/module/sev_guest") and os.path.isdir("/sys/kernel/config/tsm/report")),
+    reason="requires a bare-metal SNP guest with the sev-guest driver + configfs-TSM",
 )
 NEEDS_TDX = pytest.mark.skipif(
-    not os.path.exists("/dev/tdx-guest"),
-    reason="requires Intel TDX hardware (/dev/tdx-guest)",
+    not (
+        (os.path.exists("/sys/module/tdx_guest") or os.path.exists("/dev/tdx_guest"))
+        and os.path.isdir("/sys/kernel/config/tsm/report")
+    ),
+    reason="requires an Intel TDX guest with the tdx-guest driver + configfs-TSM",
 )
 NEEDS_OPAQUE = pytest.mark.skipif(
     not os.environ.get("OPAQUE_ATTESTATION_URL"),
@@ -60,21 +63,33 @@ SAMPLE_MANIFEST = {
 # ---------------------------------------------------------------------------
 
 
+TSM_DIR = "/sys/kernel/config/tsm/report"
+
+
+def _snp_report_with(report_data: bytes, measurement: bytes = bytes(range(48))) -> bytes:
+    """Build a minimal 1184-byte SNP report carrying the given fields."""
+    buf = bytearray(0x4A0)
+    buf[0x00:0x04] = (3).to_bytes(4, "little")  # version
+    buf[0x50:0x50 + len(report_data)] = report_data
+    buf[0x90:0x90 + 48] = measurement
+    return bytes(buf)
+
+
 def test_sevsnp_raises_without_device(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    monkeypatch.setattr(os.path, "isdir", lambda p: False)
     with pytest.raises(AttestationUnavailableError, match="SEV-SNP"):
         SEVSNPProvider()
 
 
 def test_sevsnp_report_before_extend_raises(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/sev-guest")
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = SEVSNPProvider()
     with pytest.raises(AttestationUnavailableError, match="extend_manifest_hash"):
         provider.get_attestation_report()
 
 
 def test_sevsnp_verify_manifest_match(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/sev-guest")
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = SEVSNPProvider()
     expected = provider.manifest_hash_value(SAMPLE_MANIFEST)
     report = AttestationReport(platform="amd-sev-snp", manifest_hash=expected)
@@ -82,81 +97,108 @@ def test_sevsnp_verify_manifest_match(monkeypatch):
 
 
 def test_sevsnp_verify_manifest_mismatch(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/sev-guest")
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = SEVSNPProvider()
     report = AttestationReport(platform="amd-sev-snp", manifest_hash="sha256:" + "00" * 32)
     assert not provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)
 
 
-@pytest.mark.skipif(not LINUX, reason="fcntl only available on Linux")
-def test_sevsnp_extend_with_mocked_ioctl(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/sev-guest")
+def test_sevsnp_extend_with_mocked_tsm(monkeypatch):
+    """extend + get_attestation_report over a mocked configfs-TSM report."""
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = SEVSNPProvider()
 
-    mock_buf = bytearray(4096)
-    mock_buf[0x90:0x90 + 48] = bytes(range(48))   # fake measurement
-    mock_buf[0x50:0x50 + 64] = bytes(range(64))     # fake REPORT_DATA (guest-supplied field)
+    import agent_manifest._hw_providers as hw
 
-    import fcntl
+    def fake_tsm(report_data):
+        # Real hardware echoes the request's report data into REPORT_DATA (0x50).
+        return _snp_report_with(report_data), "sev_guest", None
 
-    def mock_ioctl(fd, op, buf):
-        buf[:] = mock_buf
-
-    mock_dev = MagicMock()
-    mock_dev.__enter__ = lambda s: mock_dev
-    mock_dev.__exit__ = MagicMock(return_value=False)
-
-    monkeypatch.setattr(fcntl, "ioctl", mock_ioctl)
-    with patch("builtins.open", return_value=mock_dev):
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
+    monkeypatch.setattr(hw, "_tsm_get_report", fake_tsm)
+    provider.extend_manifest_hash(SAMPLE_MANIFEST)
 
     report = provider.get_attestation_report()
     assert report.platform == "amd-sev-snp"
     assert report.manifest_hash.startswith("sha256:")
     assert report.raw["measurement"] == bytes(range(48)).hex()
-    assert report.raw["report_data"] == bytes(range(64)).hex()
-    assert report.raw["vmpl"] == 0
+    # REPORT_DATA carries the manifest digest in its first 32 bytes.
+    digest = provider.manifest_hash_value(SAMPLE_MANIFEST).split(":", 1)[1]
+    assert report.raw["report_data"][:64] == digest
 
 
-@pytest.mark.skipif(not LINUX, reason="fcntl only available on Linux")
-def test_sevsnp_extend_ioctl_oserror_raises(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/sev-guest")
+def test_sevsnp_wrong_tsm_provider_raises(monkeypatch):
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = SEVSNPProvider()
 
-    import fcntl
+    import agent_manifest._hw_providers as hw
 
-    monkeypatch.setattr(fcntl, "ioctl", MagicMock(side_effect=OSError("perm denied")))
-    mock_dev = MagicMock()
-    mock_dev.__enter__ = lambda s: mock_dev
-    mock_dev.__exit__ = MagicMock(return_value=False)
-    with patch("builtins.open", return_value=mock_dev):
-        with pytest.raises(AttestationUnavailableError, match="ioctl"):
-            provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-
-@pytest.mark.skipif(not LINUX, reason="fcntl only available on Linux")
-def test_sevsnp_extend_manifest_hash_value_matches(monkeypatch):
-    """verify_manifest_in_report must compare REPORT_DATA from hardware bytes (HW-002)."""
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/sev-guest")
-    provider = SEVSNPProvider()
-
-    import fcntl
-
-    def mock_ioctl_with_report_data(fd, op, buf):
-        # Simulate hardware echoing user_data into REPORT_DATA (offset 0x50)
-        # extend_manifest_hash puts user_data = digest||zeros at buf[0:64]
-        buf[0x50:0x50 + 64] = buf[0:64]
-
-    mock_dev = MagicMock()
-    mock_dev.__enter__ = lambda s: mock_dev
-    mock_dev.__exit__ = MagicMock(return_value=False)
-    monkeypatch.setattr(fcntl, "ioctl", mock_ioctl_with_report_data)
-    with patch("builtins.open", return_value=mock_dev):
+    monkeypatch.setattr(
+        hw, "_tsm_get_report", lambda rd: (_snp_report_with(rd), "tdx_guest", None)
+    )
+    with pytest.raises(AttestationUnavailableError, match="not 'sev_guest'"):
         provider.extend_manifest_hash(SAMPLE_MANIFEST)
+
+
+def test_sevsnp_extend_manifest_hash_value_matches(monkeypatch):
+    """verify_manifest_in_report compares REPORT_DATA from the captured bytes."""
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
+    provider = SEVSNPProvider()
+
+    import agent_manifest._hw_providers as hw
+
+    monkeypatch.setattr(
+        hw, "_tsm_get_report", lambda rd: (_snp_report_with(rd), "sev_guest", None)
+    )
+    provider.extend_manifest_hash(SAMPLE_MANIFEST)
 
     report = provider.get_attestation_report()
     assert report.manifest_hash == provider.manifest_hash_value(SAMPLE_MANIFEST)
     assert provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)
+
+
+# ---------------------------------------------------------------------------
+# AzureCVMProvider — detection and PCR-replay verification (mocked tpm2)
+# ---------------------------------------------------------------------------
+
+
+def test_azure_unavailable_without_hcl_index(monkeypatch):
+    import agent_manifest._hw_providers as hw
+
+    def raise_tpm(args):
+        raise AttestationUnavailableError("tpm2_nvreadpublic ... handle not found")
+
+    monkeypatch.setattr(hw, "_run_tpm", raise_tpm)
+    from agent_manifest._hw_providers import AzureCVMProvider
+
+    with pytest.raises(AttestationUnavailableError, match="Azure confidential VM"):
+        AzureCVMProvider()
+
+
+def test_azure_verify_manifest_pcr_replay(monkeypatch):
+    import hashlib
+
+    import agent_manifest._hw_providers as hw
+    from agent_manifest._hw_providers import AzureCVMProvider
+
+    monkeypatch.setattr(hw, "_run_tpm", lambda args: b"ok")  # NV index "present"
+    provider = AzureCVMProvider(pcr_index=16)
+
+    digest = provider.manifest_hash_value(SAMPLE_MANIFEST).split(":", 1)[1]
+    # A resettable PCR starts at 0; after one extend it is sha256(0x00*32 || digest).
+    expected_pcr = hashlib.sha256(bytes(32) + bytes.fromhex(digest)).hexdigest()
+    good = AttestationReport(
+        platform="azure-cvm-sev-snp",
+        manifest_hash=f"sha256:{digest}",
+        raw={"pcr_read": f"  16: 0x{expected_pcr.upper()}", "pcr_index": 16},
+    )
+    assert provider.verify_manifest_in_report(good, SAMPLE_MANIFEST) is True
+
+    bad = AttestationReport(
+        platform="azure-cvm-sev-snp",
+        manifest_hash=f"sha256:{digest}",
+        raw={"pcr_read": "  16: 0x" + "00" * 32, "pcr_index": 16},
+    )
+    assert provider.verify_manifest_in_report(bad, SAMPLE_MANIFEST) is False
 
 
 # ---------------------------------------------------------------------------
@@ -164,33 +206,33 @@ def test_sevsnp_extend_manifest_hash_value_matches(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _fake_tdx_quote(report_data: bytes) -> bytes:
+    """Minimal TDX v4 quote (header + TD report body) carrying report_data.
+
+    Enough for parse + verify_manifest_in_report; no signature (the provider only
+    verifies the signature when require_quote_verification=True).
+    """
+    header = struct.pack("<HHI", 4, 2, 0x81) + bytes(40)
+    body = bytearray(584)
+    body[520:520 + len(report_data)] = report_data[:64]
+    return header + bytes(body)
+
+
 def test_tdx_raises_without_device(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    monkeypatch.setattr(os.path, "isdir", lambda p: False)
     with pytest.raises(AttestationUnavailableError, match="TDX"):
         TDXProvider()
 
 
 def test_tdx_report_before_extend_raises(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = TDXProvider()
     with pytest.raises(AttestationUnavailableError, match="extend_manifest_hash"):
         provider.get_attestation_report()
 
 
-def test_tdx_default_rtmr_index(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
-    provider = TDXProvider()
-    assert provider._rtmr == 1
-
-
-def test_tdx_custom_rtmr_index(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
-    provider = TDXProvider(rtmr_index=2)
-    assert provider._rtmr == 2
-
-
 def test_tdx_verify_manifest_match(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = TDXProvider()
     expected = provider.manifest_hash_value(SAMPLE_MANIFEST)
     report = AttestationReport(platform="intel-tdx", manifest_hash=expected)
@@ -198,269 +240,57 @@ def test_tdx_verify_manifest_match(monkeypatch):
 
 
 def test_tdx_verify_manifest_mismatch(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
     provider = TDXProvider()
     report = AttestationReport(platform="intel-tdx", manifest_hash="sha256:" + "ff" * 32)
     assert not provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)
 
 
-@pytest.mark.skipif(not LINUX, reason="fcntl only available on Linux")
-def test_tdx_extend_with_mocked_ioctl(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
-    provider = TDXProvider(rtmr_index=1)
+def test_tdx_extend_with_mocked_tsm(monkeypatch):
+    """extend + get_attestation_report over a mocked configfs-TSM tdx_guest quote."""
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
+    provider = TDXProvider()
 
-    # buf is 1088 bytes (tdx_report_req: reportdata[64] + tdreport[1024])
-    # reportdata in tdreport is at buf offset 104 (64 + 40)
-    mock_response = bytearray(1088)
-    for i in range(64):
-        mock_response[104 + i] = i  # recognizable pattern at reportdata offset
+    import agent_manifest._hw_providers as hw
 
-    import fcntl
+    def fake_tsm(report_data):
+        return _fake_tdx_quote(report_data), "tdx_guest", None
 
-    def mock_ioctl(fd, op, buf):
-        buf[:1088] = mock_response
-
-    mock_dev = MagicMock()
-    mock_dev.__enter__ = lambda s: mock_dev
-    mock_dev.__exit__ = MagicMock(return_value=False)
-
-    monkeypatch.setattr(fcntl, "ioctl", mock_ioctl)
-    with patch("builtins.open", return_value=mock_dev):
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
+    monkeypatch.setattr(hw, "_tsm_get_report", fake_tsm)
+    provider.extend_manifest_hash(SAMPLE_MANIFEST)
 
     report = provider.get_attestation_report()
     assert report.platform == "intel-tdx"
     assert report.manifest_hash.startswith("sha256:")
-    assert report.raw["rtmr_index"] == 1
-    assert report.raw["report_data"] == bytes(range(64)).hex()
-
-
-@pytest.mark.skipif(not LINUX, reason="fcntl only available on Linux")
-def test_tdx_extend_ioctl_oserror_raises(monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
-    provider = TDXProvider()
-
-    import fcntl
-
-    monkeypatch.setattr(fcntl, "ioctl", MagicMock(side_effect=OSError("no perm")))
-    mock_dev = MagicMock()
-    mock_dev.__enter__ = lambda s: mock_dev
-    mock_dev.__exit__ = MagicMock(return_value=False)
-    with patch("builtins.open", return_value=mock_dev):
-        with pytest.raises(AttestationUnavailableError, match="TDX"):
-            provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-
-@pytest.mark.skipif(not LINUX, reason="fcntl only available on Linux")
-def test_tdx_extend_manifest_hash_value_matches(monkeypatch):
-    """verify_manifest_in_report must compare reportdata from hardware bytes (HW-002)."""
-    monkeypatch.setattr(os.path, "exists", lambda p: p == "/dev/tdx-guest")
-    provider = TDXProvider()
-
-    import fcntl
-
-    def mock_ioctl_with_reportdata(fd, op, buf):
-        # Simulate hardware echoing reportdata (buf[0:64]) into REPORTMACSTRUCT.reportdata
-        # tdreport starts at offset 64; reportdata is at offset 40 within REPORTMACSTRUCT
-        buf[104:168] = buf[0:64]  # 64 + 40 = 104
-
-    mock_dev = MagicMock()
-    mock_dev.__enter__ = lambda s: mock_dev
-    mock_dev.__exit__ = MagicMock(return_value=False)
-    monkeypatch.setattr(fcntl, "ioctl", mock_ioctl_with_reportdata)
-    with patch("builtins.open", return_value=mock_dev):
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    report = provider.get_attestation_report()
-    assert report.manifest_hash == provider.manifest_hash_value(SAMPLE_MANIFEST)
+    digest = provider.manifest_hash_value(SAMPLE_MANIFEST).split(":", 1)[1]
+    assert report.raw["report_data"][:64] == digest  # REPORTDATA[:32]
     assert provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)
 
 
+def test_tdx_wrong_tsm_provider_raises(monkeypatch):
+    monkeypatch.setattr(os.path, "isdir", lambda p: p == TSM_DIR)
+    provider = TDXProvider()
+
+    import agent_manifest._hw_providers as hw
+
+    monkeypatch.setattr(
+        hw, "_tsm_get_report", lambda rd: (_fake_tdx_quote(rd), "sev_guest", None)
+    )
+    with pytest.raises(AttestationUnavailableError, match="not 'tdx_guest'"):
+        provider.extend_manifest_hash(SAMPLE_MANIFEST)
+
+
 # ---------------------------------------------------------------------------
-# OPAQUEProvider — all platforms (mock httpx)
+# OPAQUEProvider — not implemented (managed service not GA; see issue #201 §5)
 # ---------------------------------------------------------------------------
 
 
-def test_opaque_raises_without_env_var(monkeypatch):
-    monkeypatch.delenv("OPAQUE_ATTESTATION_URL", raising=False)
-    with pytest.raises(AttestationUnavailableError, match="OPAQUE_ATTESTATION_URL"):
+def test_opaque_provider_is_not_implemented():
+    """OPAQUE managed attestation is disabled: the managed service is not
+    generally available and the SDK does not verify its TRACE claim, so the
+    provider fails closed at construction rather than looking verified."""
+    with pytest.raises(AttestationUnavailableError, match="not implemented"):
         OPAQUEProvider()
-
-
-def test_opaque_raises_on_empty_env_var(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "")
-    with pytest.raises(AttestationUnavailableError, match="OPAQUE_ATTESTATION_URL"):
-        OPAQUEProvider()
-
-
-def test_opaque_report_before_extend_raises(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-    with pytest.raises(AttestationUnavailableError, match="extend_manifest_hash"):
-        provider.get_attestation_report()
-
-
-def test_opaque_extend_success(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-
-    fake_trace = {"eat_profile": "tag:agentrust.io,2026:trace-v0.1", "iat": 1234567890}
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = fake_trace
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    called_url = mock_post.call_args[0][0]
-    assert called_url == "https://attest.example.com/v1/attest"
-
-    report = provider.get_attestation_report()
-    assert report.platform == "opaque"
-    assert report.manifest_hash.startswith("sha256:")
-    assert report.raw == fake_trace
-
-
-def test_opaque_extend_posts_pre_image(monkeypatch):
-    import base64
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {}
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    body = mock_post.call_args.kwargs["json"]
-    assert "manifest_pre_image" in body
-    decoded = base64.b64decode(body["manifest_pre_image"])
-    assert len(decoded) > 0
-
-
-def test_opaque_extend_pre_image_is_correct(monkeypatch):
-    """The posted pre-image must match manifest_pre_image()."""
-    import base64
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {}
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    body = mock_post.call_args.kwargs["json"]
-    posted = base64.b64decode(body["manifest_pre_image"])
-    expected = provider.manifest_pre_image(SAMPLE_MANIFEST)
-    assert posted == expected
-
-
-def test_opaque_extend_with_api_key(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    monkeypatch.setenv("OPAQUE_API_KEY", "secret-key-123")
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {}
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    headers = mock_post.call_args.kwargs["headers"]
-    assert headers.get("Authorization") == "Bearer secret-key-123"
-
-
-def test_opaque_extend_without_api_key_sends_empty_headers(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    monkeypatch.delenv("OPAQUE_API_KEY", raising=False)
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {}
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    headers = mock_post.call_args.kwargs["headers"]
-    assert "Authorization" not in headers
-
-
-def test_opaque_extend_http_error_raises(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 503
-    mock_response.text = "Service Unavailable"
-
-    with patch("httpx.post", return_value=mock_response):
-        with pytest.raises(AttestationUnavailableError, match="503"):
-            provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-
-def test_opaque_extend_401_raises(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 401
-    mock_response.text = "Unauthorized"
-
-    with patch("httpx.post", return_value=mock_response):
-        with pytest.raises(AttestationUnavailableError, match="401"):
-            provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-
-def test_opaque_manifest_hash_format(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {}
-
-    with patch("httpx.post", return_value=mock_response):
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    report = provider.get_attestation_report()
-    assert report.manifest_hash.startswith("sha256:")
-    assert len(report.manifest_hash) == 7 + 64
-
-
-def test_opaque_verify_manifest_match(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-    expected = provider.manifest_hash_value(SAMPLE_MANIFEST)
-    report = AttestationReport(platform="opaque", manifest_hash=expected)
-    assert provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)
-
-
-def test_opaque_verify_manifest_mismatch(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com")
-    provider = OPAQUEProvider()
-    report = AttestationReport(platform="opaque", manifest_hash="sha256:" + "aa" * 32)
-    assert not provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)
-
-
-def test_opaque_url_trailing_slash_stripped(monkeypatch):
-    monkeypatch.setenv("OPAQUE_ATTESTATION_URL", "https://attest.example.com/")
-    provider = OPAQUEProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {}
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        provider.extend_manifest_hash(SAMPLE_MANIFEST)
-
-    called_url = mock_post.call_args[0][0]
-    assert not called_url.startswith("https://attest.example.com//")
-    assert called_url == "https://attest.example.com/v1/attest"
 
 
 # ---------------------------------------------------------------------------
@@ -486,11 +316,3 @@ def test_tdx_hardware_roundtrip():
     assert report.platform == "intel-tdx"
     assert provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)
 
-
-@NEEDS_OPAQUE
-def test_opaque_hardware_roundtrip():
-    provider = OPAQUEProvider()
-    provider.extend_manifest_hash(SAMPLE_MANIFEST)
-    report = provider.get_attestation_report()
-    assert report.platform == "opaque"
-    assert provider.verify_manifest_in_report(report, SAMPLE_MANIFEST)

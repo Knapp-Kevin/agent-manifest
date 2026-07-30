@@ -25,11 +25,11 @@
 [![Spec](https://img.shields.io/badge/Spec-v0.1_·_197_tests-0ea5e9)](spec/agent-manifest-spec-v0.1.md)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white&style=flat)](https://discord.gg/9JWNpH7E)
 
-> **Developer Preview** — launching at Confidential Computing Summit, June 23 2026.
+> **Developer Preview.** Launched at Confidential Computing Summit, June 23 2026.
 
 A signed JWT proves who called an API. It proves nothing about the agent that made the call.
 
-Agent Manifest binds the ten artifacts that define an agent — system prompt, policy bundle, tool schemas, model identity, RAG corpus, memory state, decision trace, A2A delegation chain, supply chain provenance, and human-in-the-loop approvals — into one hardware-attestable, tamper-evident record. A signed manifest makes agent identity provable to any third party who has no reason to trust the operator.
+Agent Manifest binds the ten artifacts that define an agent (system prompt, policy bundle, tool schemas, model identity, RAG corpus, memory state, decision trace, A2A delegation chain, supply chain provenance, and human-in-the-loop approvals) into one hardware-attestable, tamper-evident record. A signed manifest makes agent identity provable to any third party who has no reason to trust the operator.
 
 ## Quick start
 

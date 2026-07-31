@@ -1,7 +1,7 @@
 # Technical Charter — Agent Manifest
 
-**Proposed donation target**: Agentic AI Foundation (AAIF) under the Linux Foundation  
-**Status**: Pre-donation draft — effective upon AAIF acceptance  
+**Proposed contribution target**: Coalition for Secure AI (CoSAI), Working Stream 4, an OASIS Open Project  
+**Status**: Pre-contribution draft, effective upon CoSAI WS4 acceptance. Phase 1 review is open in [WS4 issue #149](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/issues/149); no contribution has been proposed yet.  
 **Version**: 0.1 (aligned with spec v0.1)
 
 ---
@@ -23,7 +23,7 @@ Out of scope: runtime policy enforcement (see Agent Governance Toolkit), MCP pro
 
 ## 3. Technical Steering Committee
 
-Upon AAIF acceptance, governance transitions from the current single-maintainer model to a Technical Steering Committee (TSC).
+Upon CoSAI WS4 acceptance, governance transitions from the current single-maintainer model to a Technical Steering Committee (TSC), aligned with the OASIS Open Projects governance model.
 
 **Composition**: 3–7 members. No single organization may hold more than 40% of TSC seats. The founding Project Lead (Imran Siddique, OPAQUE Systems) holds one permanent founding seat for the v1.0 ratification cycle, after which all seats are elected.
 
@@ -40,15 +40,17 @@ Upon AAIF acceptance, governance transitions from the current single-maintainer 
 
 ## 4. Intellectual Property Policy
 
-All contributions to the project must be made under the Apache License, Version 2.0. Contributors must sign off commits with the Developer Certificate of Origin (DCO). A Contributor License Agreement (CLA) may be required before AAIF acceptance if the foundation's IP policy requires it — contributors will be notified before any CLA requirement takes effect.
-
-No contribution may incorporate material covered by a patent the contributor is unwilling to license royalty-free to all implementations of the specification.
+All contributions to the project must be made under the Apache License, Version 2.0. Contributors must sign off commits with the Developer Certificate of Origin (DCO).
 
 The specification itself is licensed under CC-BY-4.0 to maximize adoption across implementations in any language or platform.
 
+No contribution may incorporate material covered by a patent the contributor is unwilling to license royalty-free to all implementations of the specification.
+
+**Consequences of the CoSAI target, not yet in effect.** The OASIS Open Projects IPR Policy that governs CoSAI requires contributors to sign a Contributor License Agreement and, for non-trivial contributions, a patent non-assert, releasing source code under Apache-2.0 and documentation and data under CC-BY-4.0. That is a stricter regime than DCO alone. It takes effect for this project only if and when WS4 accepts a contribution, and contributors will be notified before any CLA requirement applies. The founding maintainer's own participation terms under that policy, including how the non-assert interacts with existing Opaque patent filings, require counsel sign-off before any contribution is filed.
+
 ## 5. Trademark Policy
 
-"Agent Manifest" as a specification name and the agentrust-io GitHub organization name are currently held by the founding maintainer. Upon AAIF acceptance, trademark ownership transfers to AAIF/Linux Foundation under their standard trademark policy. Until transfer, use of the name "Agent Manifest" to describe a conformant implementation is permitted without restriction. Use to describe a non-conformant implementation is not permitted.
+"Agent Manifest" as a specification name and the agentrust-io GitHub organization name are currently held by the founding maintainer. Upon CoSAI WS4 acceptance, name and mark ownership transfer on the terms set by the OASIS Open Projects policy; the specific terms are to be determined with counsel before a contribution is filed and are not asserted here. Until transfer, use of the name "Agent Manifest" to describe a conformant implementation is permitted without restriction. Use to describe a non-conformant implementation is not permitted.
 
 ## 6. Conformance
 
@@ -69,17 +71,20 @@ This project is designed to compose with, not replace:
 
 ## 8. Amendments
 
-Amendments to this charter require a two-thirds TSC majority and a 30-day public comment period. Before AAIF acceptance, amendments require Project Lead approval and 14-day notice to contributors.
+Amendments to this charter require a two-thirds TSC majority and a 30-day public comment period. Before CoSAI WS4 acceptance, amendments require Project Lead approval and 14-day notice to contributors.
 
-## 9. Foundation Transition
+## 9. Standards Body Transition
 
-This project is targeting donation to the Agentic AI Foundation (AAIF) alongside the Agent Governance Toolkit. The transition timeline:
+This project is targeting contribution to CoSAI Working Stream 4 (Secure Design Patterns for Agentic Systems), an OASIS Open Project. The timeline:
 
 | Milestone | Target |
 |-----------|--------|
 | v0.1 developer preview | June 2026 |
-| AAIF working group formation | Q3 2026 |
-| AAIF submission (spec + conformance suite) | September 2026 |
-| v1.0 ratification under AAIF governance | 2027 |
+| WS4 Phase 1 review (RFC open, feedback collection) | July to August 9, 2026 |
+| Revised spec returned to WS4 with review dispositions | August 2026 |
+| WS4 decision on formal contribution | Q4 2026 |
+| v1.0 ratification under CoSAI governance | 2027 |
 
-Until AAIF acceptance, this charter describes the intended governance. The GOVERNANCE.md file describes the current operating governance.
+Phase 1 is a review pass, not a request to accept. Until WS4 accepts a contribution, this charter describes the intended governance and the GOVERNANCE.md file describes the current operating governance.
+
+The Agent Governance Toolkit is governed separately and its own standards destination is not set by this charter.

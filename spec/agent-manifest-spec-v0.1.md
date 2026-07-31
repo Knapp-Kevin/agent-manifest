@@ -8,7 +8,7 @@
 | Status | Draft v0.1 - Proposed Open Standard |
 | Date | June 2026 |
 | Relationship | Extends: OWASP ASI 2026 \| Aligns: CoSAI WS1, EU AI Act Art. 14/15 |
-| Target Standards Body | Agentic AI Foundation (AAIF) - Linux Foundation |
+| Target Standards Body | Coalition for Secure AI (CoSAI) WS4 - OASIS Open |
 
 ---
 
@@ -236,7 +236,7 @@ All fields annotated as UUID v7 MUST conform to RFC 9562 Section 5.7. The string
 The `agent_id` path structure `/agent/<name>/<instance>` shown in examples is a convention, not a requirement. Trust domain must be lowercase `[a-z0-9._-]`; path segments may use `[a-zA-Z0-9._-]`. UUID v7 instance identifiers (hyphens permitted in path segments) are valid. Example: `spiffe://trust.example/agent/payments-processor/01926b4c-1234-7abc-9def-000000000001`.
 
 <!-- CHANGED: SCHEMA F-15/@context - normative note on provisional URL -->
-The `@context` URL `https://agentmanifest.agentrust.io/v0.1/context.json` is provisional for the v0.1 draft period. The AAIF working group will assign the canonical URL prior to v1.0 ratification. Implementations MUST support the canonical AAIF URL when it is assigned, and SHOULD support the v0.1 draft URL for backward compatibility with pre-ratification manifests.
+The `@context` URL `https://agentmanifest.agentrust.io/v0.1/context.json` is provisional for the v0.1 draft period. The CoSAI WS4 working stream will assign the canonical URL prior to v1.0 ratification. Implementations MUST support the canonical CoSAI-assigned URL when it is assigned, and SHOULD support the v0.1 draft URL for backward compatibility with pre-ratification manifests.
 
 <!-- CHANGED: SCHEMA F-19 - normative artifact-to-field mapping table -->
 Artifact-to-field mapping (for Level 2 "all 10 artifacts bound" conformance):
@@ -439,7 +439,7 @@ Poisoning scan rules: <!-- CHANGED: SCHEMA F-17 -->
 - A manifest with `poisoning_scan.result: flagged` MUST NOT be issued as VALID. The manifest MUST be held in `INCOMPLETE` state until flagged documents are removed and a clean scan completed.
 - For Level 1 conformance and above, `poisoning_scan.result: not-scanned` is NOT permitted. The corpus MUST be scanned before the manifest is signed.
 - For Level 0, `not-scanned` is permitted but MUST surface as a warning in the verification result.
-- `scanner_version` MUST include the scanner tool name and semantic version string in the format `"<tool-name>/<semver>"` (e.g., `"lakera-scan/1.4.2"`). When the AAIF scanner registry is established in v0.2, implementations SHOULD reference a registered scanner identifier.
+- `scanner_version` MUST include the scanner tool name and semantic version string in the format `"<tool-name>/<semver>"` (e.g., `"lakera-scan/1.4.2"`). When the CoSAI WS4 scanner registry is established in v0.2, implementations SHOULD reference a registered scanner identifier.
 
 #### 3.2.6 Memory Baseline Binding
 
@@ -1442,7 +1442,7 @@ A conformant Agent Manifest implementation MUST pass all tests in the reference 
 | AM-VERIFY | 52 tests | Verification endpoint: result schema, mismatch detection, delegation chain validation, HITL verification, revocation status check, error response schemas. |
 | AM-COMPAT | 31 tests | AGT integration, cMCP integration, MCP protocol extension, SLSA provenance binding. |
 
-Total: 197 conformance tests. The test suite will be published as an open-source repository alongside the AGT donation to AAIF. Conformance claims MUST reference a specific test suite version and MUST include a passing test run against the reference implementation.
+Total: 197 conformance tests. The test suite is published as an open-source repository under the agentrust-io organization and moves with the specification to its target standards body. Conformance claims MUST reference a specific test suite version and MUST include a passing test run against the reference implementation.
 
 ## 9. Regulatory Mapping
 
@@ -1569,7 +1569,7 @@ The Art. 13 row in section 9.1 cross-references `operational_lifecycle.expected_
 - Verification API specification with error schemas and revocation protocol
 - TEE attestation binding protocol with per-platform profiles
 - Conformance test suite (197 tests)
-- Reference implementation targeting AAIF + cMCP
+- Reference implementation targeting CoSAI WS4 + cMCP
 
 ### 10.2 Version 0.2
 
@@ -1583,20 +1583,22 @@ Targets: Q3 2026. Driven by community and early adopter feedback collected durin
 - Federated verification - cross-organizational manifest verification without shared infrastructure
 - A2A delegation chain revocation - how to invalidate a mid-chain delegation without revoking the full manifest
 - OCC RFI tracking - align to any agentic AI governance guidance issued by OCC, FDIC, or the Federal Reserve following the 2026 RFI process
-- AAIF scanner registry - define a registered scanner identifier format for `poisoning_scan.scanner_version`
+- CoSAI WS4 scanner registry - define a registered scanner identifier format for `poisoning_scan.scanner_version`
 
-### 10.3 Version 1.0 - Proposed AAIF Standard
+### 10.3 Version 1.0 - Proposed CoSAI Standard
 
-<!-- CHANGED: F-06 - added @context URL transfer as AAIF donation condition -->
+<!-- CHANGED: F-06 - added @context URL transfer as a donation condition -->
+<!-- CHANGED: target standards body retargeted from AAIF to CoSAI WS4 (OASIS Open) -->
 
-Target: Q1 2027. Submission to AAIF alongside the AGT donation.
+Target: Q1 2027. Contribution to CoSAI Working Stream 4 (Secure Design Patterns for Agentic Systems) as an OASIS Open Project deliverable. Sequencing is set by WS4: the Phase 1 review opened in [WS4 issue #149](https://github.com/cosai-oasis/ws4-secure-design-agentic-systems/issues/149) and no contribution is proposed until that review closes and WS4 decides.
 
 - Finalized data model with no breaking changes from v0.2
 - Interoperability validated with at least three independent implementations
-- AAIF working group review and endorsement
-- Reference implementation published as AAIF project
+- CoSAI WS4 review and endorsement
+- Reference implementation contributed as a CoSAI Open Project deliverable
 - Conformance certification program defined
-- Transfer of `agentmanifest.agentrust.io` (or successor provisional domain) to AAIF-controlled infrastructure as a condition of v1.0 acceptance. The canonical `@context` URL will be updated to an AAIF-controlled namespace at this point.
+- Transfer of `agentmanifest.agentrust.io` (or successor provisional domain) to CoSAI/OASIS-controlled infrastructure as a condition of v1.0 acceptance. The canonical `@context` URL will be updated to a CoSAI-controlled namespace at this point.
+- Opaque's participation terms under the OASIS Open Projects IPR Policy, including the CLA and the patent non-assert covering non-trivial contributions, reviewed and signed off by counsel before any contribution is filed. See [CHARTER.md](../CHARTER.md) section 4.
 
 ### 10.4 Relationship to Existing Standards
 

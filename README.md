@@ -78,7 +78,7 @@ signed = sign_manifest(manifest, key=signing_key)
 
 ## Standards alignment
 
-Targeting the [Agentic AI Foundation (AAIF)](https://agenticai.foundation) at the Linux Foundation. 197 conformance tests against the formal specification. Integrates with [TRACE](https://github.com/agentrust-io/trace-spec) for hardware-rooted attestation.
+Targeting [CoSAI](https://www.coalitionforsecureai.org/) Working Stream 4, an OASIS Open Project. 197 conformance tests against the formal specification. Integrates with [TRACE](https://github.com/agentrust-io/trace-spec) for hardware-rooted attestation.
 
 ## Contributing
 

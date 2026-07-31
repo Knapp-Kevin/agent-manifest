@@ -20,9 +20,9 @@ Full commit and merge rights on designated package areas. PyPI publish rights on
 
 ### Project Lead
 
-Final decision authority on specification changes, AAIF submission scope, conformance test disputes, and Maintainer appointments. Currently: Imran Siddique (OPAQUE Systems).
+Final decision authority on specification changes, standards contribution scope, conformance test disputes, and Maintainer appointments. Currently: Imran Siddique (OPAQUE Systems).
 
-**Succession**: If the Project Lead is unavailable for 30+ days without notice, the active Maintainers vote to appoint an interim lead. Succession plan will be formalized before AAIF v1.0 submission with a Technical Steering Committee structure.
+**Succession**: If the Project Lead is unavailable for 30+ days without notice, the active Maintainers vote to appoint an interim lead. Succession plan will be formalized before v1.0 contribution to CoSAI with a Technical Steering Committee structure.
 
 ## Decision-making
 
@@ -40,7 +40,7 @@ Maintainers must disclose any commercial interest in a proposal before participa
 
 ## Foundation transition
 
-This project is targeting donation to the Agentic AI Foundation (AAIF) under the Linux Foundation alongside the Agent Governance Toolkit. On acceptance, governance will transition to a TSC structure defined in [CHARTER.md](CHARTER.md) (to be added before AAIF submission). Until then, this document is the governance authority.
+This project is targeting contribution to CoSAI Working Stream 4, an OASIS Open Project. On acceptance, governance will transition to a TSC structure defined in [CHARTER.md](CHARTER.md). Until then, this document is the governance authority.
 
 ## Amendments
 

@@ -6,7 +6,7 @@
 |------|-------------|--------|------|
 | Imran Siddique | OPAQUE Systems | @agentrust-io | Project Lead, Spec Author |
 
-The Project Lead has final decision authority on specification changes, AAIF submission scope, and maintainer appointments.
+The Project Lead has final decision authority on specification changes, standards contribution scope, and maintainer appointments.
 
 ## How to become a maintainer
 

@@ -11,7 +11,7 @@ Launching at Confidential Computing Summit, June 23 2026.
 - Post-quantum profile: ML-DSA-65 (NIST FIPS 204), SHAKE-256 (via `[pq]` extra)
 - Integration architecture documented: AGT, cMCP, MCP
 
-**Not in v0.1**: TypeScript SDK, Go SDK, .NET SDK, streaming decision trace, multi-agent delegation UI, AAIF submission.
+**Not in v0.1**: TypeScript SDK, Go SDK, .NET SDK, streaming decision trace, multi-agent delegation UI, CoSAI WS4 contribution.
 
 ## Next — v0.2 (Q3 2026)
 
@@ -28,13 +28,13 @@ Driven by community and early adopter feedback from the CC Summit period. Curren
 
 v0.2 will go through the RFC process (14-day comment period) for any normative changes.
 
-## Later — v1.0 AAIF standard (2027)
+## Later — v1.0 CoSAI standard (2027)
 
-- Full TSC governance under AAIF
+- Full TSC governance under CoSAI / OASIS Open
 - All open spec ambiguities resolved
 - Complete conformance certification program
 - Multi-language SDK parity (Python, TypeScript, Go, .NET, Rust)
-- AAIF-assigned canonical `@context` URL replacing the provisional v0.1 URL
+- CoSAI-assigned canonical `@context` URL replacing the provisional v0.1 URL
 - Post-quantum profile as first-class (not optional extra)
 - Streaming decision trace binding
 - Internationalization: docs in Japanese, Simplified Chinese, Korean

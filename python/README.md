@@ -138,7 +138,7 @@ manifest fails closed as `UNVERIFIABLE` and the command exits 1.
 
 The full Agent Manifest Specification v0.1 is at [`spec/agent-manifest-spec-v0.1.md`](https://github.com/agentrust-io/agent-manifest/blob/main/spec/agent-manifest-spec-v0.1.md).
 
-Being submitted to the [Agentic AI Foundation (AAIF)](https://agenticai.foundation) under the Linux Foundation alongside AGT.
+Proposed for contribution to [CoSAI](https://www.coalitionforsecureai.org/) Working Stream 4, an OASIS Open Project.
 
 ## License
 

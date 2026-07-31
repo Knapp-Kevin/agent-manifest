@@ -26,7 +26,7 @@ The Agent Manifest Specification v0.1 is a formal RFC 2119 document defining the
 | 7  -  Threat Model | 10 threat classes addressed; explicit out-of-scope threats |
 | 8  -  Conformance | Levels 0–3; 197 conformance tests across 5 modules |
 | 9  -  Regulatory Mapping | EU AI Act, DORA, GDPR, HIPAA, PCI-DSS, FedRAMP |
-| 10  -  Roadmap | v0.2 targets, v1.0 AAIF submission |
+| 10  -  Roadmap | v0.2 targets, v1.0 CoSAI WS4 contribution |
 
 ## Conformance test modules
 

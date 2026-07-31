@@ -1,6 +1,6 @@
 # Antitrust Policy
 
-Agent Manifest is an open specification project hosted under the agentrust-io organization and targeting donation to the Agentic AI Foundation (AAIF) under the Linux Foundation. Participation in this project is subject to antitrust and competition laws.
+Agent Manifest is an open specification project hosted under the agentrust-io organization and targeting contribution to the Coalition for Secure AI (CoSAI), Working Stream 4, an OASIS Open Project. Participation in this project is subject to antitrust and competition laws.
 
 ## Prohibited topics
 

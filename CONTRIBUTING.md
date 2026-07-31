@@ -4,7 +4,7 @@ Agent Manifest is an open specification and reference SDK. Contributions are wel
 
 ## Before you start
 
-The spec is in active design-partner review ahead of AAIF submission. Breaking spec changes (field renames, schema incompatibilities, conformance level changes) require an issue and discussion before a PR. Non-breaking additions and bug fixes can go straight to a PR.
+The spec is in active design-partner review, and in CoSAI WS4 Phase 1 review ahead of a proposed contribution to WS4. Breaking spec changes (field renames, schema incompatibilities, conformance level changes) require an issue and discussion before a PR. Non-breaking additions and bug fixes can go straight to a PR.
 
 ## DCO sign-off
 

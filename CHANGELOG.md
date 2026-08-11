@@ -12,6 +12,10 @@ All notable changes to Agent Manifest are documented here. Format follows [Keep 
 
 ### Security
 
+- The PyPI release workflow now installs and smoke-tests both the exact wheel and source distribution before upload, including version/tag agreement, import provenance, a public cryptographic verification roundtrip, and the packaged CLI entry point.
+
+### Security
+
 - Generic hardware-attestation certificate-chain verification now enforces every certificate's validity period and requires every issuing certificate to carry `BasicConstraints(ca=True)`. If an issuer declares `KeyUsage`, it must permit certificate signing.
 
 ### Fixed
@@ -337,6 +341,8 @@ Initial developer preview. Launching at Confidential Computing Summit, June 23 2
 - CLI: `manifest keygen`, `create`, `sign`, `attest`, `verify`, `revoke`
 - Post-quantum support via `pyoqs`: `pip install "agent-manifest[pq]"`
 - Verification server: `pip install "agent-manifest[server]"`
+- Python 3.11, 3.12, 3.13 support
+
 - Python 3.11, 3.12, 3.13 support
 
 - Python 3.11, 3.12, 3.13 support

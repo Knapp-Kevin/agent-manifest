@@ -12,6 +12,8 @@ All notable changes to Agent Manifest are documented here. Format follows [Keep 
 
 ### Security
 
+- `FileCRL.revoke()` now verifies a record's signature and signer key ID before mutating its cache or append-only file whenever `trusted_signer_key` is configured. This closes an append-time bypass of the existing load-time trust check.
+
 - `verify_manifest()` now rejects manifests whose `issued_at` is in the future and treats `expires_at` as an exclusive upper bound, enforcing the specification's full `issued_at <= now < expires_at` validity window.
 
 ## [0.11.0] — 2026-08-11

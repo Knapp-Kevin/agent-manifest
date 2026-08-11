@@ -10,6 +10,10 @@ All notable changes to Agent Manifest are documented here. Format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The Python test harness now pins imports to the checkout's `src` tree and asserts that location, preventing a stale installed `agent-manifest` wheel from producing misleading release-validation results.
+
 ### Security
 
 - `FileCRL.revoke()` now verifies a record's signature and signer key ID before mutating its cache or append-only file whenever `trusted_signer_key` is configured. This closes an append-time bypass of the existing load-time trust check.
@@ -329,4 +333,6 @@ Initial developer preview. Launching at Confidential Computing Summit, June 23 2
 - CLI: `manifest keygen`, `create`, `sign`, `attest`, `verify`, `revoke`
 - Post-quantum support via `pyoqs`: `pip install "agent-manifest[pq]"`
 - Verification server: `pip install "agent-manifest[server]"`
+- Python 3.11, 3.12, 3.13 support
+
 - Python 3.11, 3.12, 3.13 support

@@ -4,6 +4,11 @@
 
 ### Added
 
+- **[SPEC][SDK]** Added the signed `composition-only` profile for repository and
+  pre-execution manifests. Every omitted artifact must be named in
+  `unbound_artifacts`; overlap and undeclared omissions fail closed. These
+  documents verify as `INCOMPLETE` and cannot claim Level 0 or above.
+
 - **[SDK]** `parse_tpm_attest()` now exposes the common signed `TPMS_ATTEST`
   header and opaque union payload, while `parse_tpm_nv_certify()` enforces the
   signed type and parses the `TPMS_NV_CERTIFY_INFO` carried by

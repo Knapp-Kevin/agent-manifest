@@ -4,6 +4,12 @@
 
 ### Added
 
+- **[SPEC][SDK]** Added the `com.agentrust-io.manifest` Agent Plugins 1.0.0
+  extension profile. It resolves an HTTPS manifest by raw-byte digest, verifies
+  it against independently trusted keys, and compares the local bundle with a
+  signed `source_bundle` binding. Absent, unreachable, unverifiable, and
+  mismatched references remain distinct outcomes.
+
 - **[SPEC][SDK]** Added the signed `composition-only` profile for repository and
   pre-execution manifests. Every omitted artifact must be named in
   `unbound_artifacts`; overlap and undeclared omissions fail closed. These

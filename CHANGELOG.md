@@ -4,6 +4,7 @@
 
 ### Added
 
+
 - **[SPEC][SDK]** Added the `com.agentrust-io.manifest` Agent Plugins 1.0.0
   extension profile. It resolves an HTTPS manifest by raw-byte digest, verifies
   it against independently trusted keys, and compares the local bundle with a
@@ -20,6 +21,22 @@
   signed type and parses the `TPMS_NV_CERTIFY_INFO` carried by
   `TPM2_NV_Certify`. This lets cMCP retire its remaining local NV-certify wire
   parser. Size-prefixed attestations now reject undeclared trailing bytes.
+
+**[SDK] `AM-VEC-COSE-002` … `AM-VEC-COSE-015` publish the COSE negative conformance vectors.** Fourteen cases a conforming verifier must not accept, covering the protected/unprotected header split, CBOR tagging and framing, payload presence, the issuer authorization boundary, the two JSON parser divergences RFC 8259 leaves open (duplicate member names, non-finite numbers), version routing in both directions, and the payload depth bound. `011` and `015` are a pair: #243 records `NaN` and `Infinity` as one class of defect, but they are not one code path in every parser, so a verifier that special-cases `NaN` passes the first and fails the second. They complete the portable contract other-language SDKs are written against: until now the suite proved an implementation could accept a valid envelope, not that it rejected an invalid one.
+
+`AM-VEC-COSE-014` is the reverse of `012` and the reason the version gate is described as bidirectional: a v0.2 manifest must not fall back to the v0.1 detached signature block, because a one-way gate is not a gate. It expects `MISMATCH` rather than `INCOMPATIBLE_VERSION`, since the verifier does support 0.2 and reporting otherwise would state something untrue about its capabilities.
+
+The hybrid authorization case, a `COSE_Sign` carrying one authorized component key alongside one unauthorized one, is deliberately not a vector: it contains an ML-DSA-65 signature, ML-DSA-65 signing is hedged, and `cryptography` 49 exposes no deterministic mode, so the bytes differ on every regeneration. It remains covered by a per-run test in the Python suite, and the vector README states the rule as binding on other languages so it is not mistaken for out of scope.
+
+Each negative carries `signature_valid`, recording whether the Ed25519 signature over the RFC 9052 `Sig_structure` verifies. Where it is true, a verifier cannot pass the vector by rejecting a broken signature and never reaching the rule the vector names. The vectors whose defect is in the payload are signed over the malformed bytes rather than having bytes swapped into an already-signed envelope, which is what keeps that guarantee. Two declare `false` by design: `AM-VEC-COSE-002` tampers with the protected header, which is the rule under test, and `AM-VEC-COSE-008` has a nil payload, so there is no `Sig_structure` to verify over.
+
+`AM-VEC-COSE-009` is byte-identical to `AM-VEC-COSE-001` and differs only in `context.trusted_key_issuers`. Nothing about the object explains the rejection, so a verifier that stops at "the signature verifies under a trusted key" returns `VALID` and has no authorization boundary at all.
+
+### Fixed
+
+- The committed conformance vectors are now diffed against a fresh in-memory regeneration by the test suite, so a vector edited by hand, or a generator change made without regenerating, fails CI rather than shipping as a contract nobody can reproduce.
+
+- The vectors had been stale each time `SIGNED_FIELDS` gained a member without being regenerated alongside it: `intent` in 0.11.0, `profile` and `unbound_artifacts` in #306, `source_bundle` in #307. In each case they they published a `signature.signed_fields` list omitting those fields, and `AM-VEC-018` carried the `manifest_hash_in_report` that followed from the shorter list. No signature or expected result changes, because none of these manifests declares any of those fields and `signing_pre_image` omits absent ones, so the signed bytes are identical either way. What was wrong is what the suite told other languages to build their pre-image from. The regeneration test above is what surfaced it, and is what stops it recurring.
 
 ### Security
 

@@ -55,13 +55,17 @@
         "expires_at",
         "issuer",
         "crypto_profile",
+        "profile",
+        "unbound_artifacts",
+        "source_bundle",
         "artifacts",
         "delegation_chain",
         "hitl_record",
         "prior_transparency_log_entry",
         "log_retention",
         "data_scope",
-        "operational_lifecycle"
+        "operational_lifecycle",
+        "intent"
       ]
     }
   },

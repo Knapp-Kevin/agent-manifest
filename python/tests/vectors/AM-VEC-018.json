@@ -45,18 +45,22 @@
         "expires_at",
         "issuer",
         "crypto_profile",
+        "profile",
+        "unbound_artifacts",
+        "source_bundle",
         "artifacts",
         "delegation_chain",
         "hitl_record",
         "prior_transparency_log_entry",
         "log_retention",
         "data_scope",
-        "operational_lifecycle"
+        "operational_lifecycle",
+        "intent"
       ]
     },
     "attestation": {
       "platform": "tpm",
-      "manifest_hash_in_report": "sha256:55a8dfda7985bf883ae26ef4a487ba5aa689640c0d633fd03bd909fe9f37b4e9"
+      "manifest_hash_in_report": "sha256:be209f45a3f44fef55001b626a46468505860f7a85245967d2365586ce2da9e0"
     }
   },
   "context": {

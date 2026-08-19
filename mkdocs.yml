@@ -139,6 +139,7 @@ extra:
 
 extra_css:
   - stylesheets/extra.css
+  - https://agentrust-io.com/design-system.css
 
 nav:
   - Home: index.md

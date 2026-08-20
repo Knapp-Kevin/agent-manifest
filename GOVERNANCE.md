@@ -4,7 +4,7 @@
 
 ### Contributor
 
-Anyone who submits a PR, files an issue, or participates in discussion. No formal appointment required. Must follow the [Code of Conduct](CODE_OF_CONDUCT.md) and sign commits with DCO.
+Anyone who submits a PR, files an issue, or participates in discussion. No formal appointment required. Must follow the [Code of Conduct](https://github.com/agentrust-io/agent-manifest/blob/main/CODE_OF_CONDUCT.md) and sign commits with DCO.
 
 ### Reviewer
 
@@ -54,7 +54,7 @@ Maintainers must disclose any commercial interest in a proposal before participa
 
 ## Foundation transition
 
-This project is targeting contribution to CoSAI Working Stream 4, an OASIS Open Project. On acceptance, governance will transition to a TSC structure defined in [CHARTER.md](CHARTER.md). Until then, this document is the governance authority.
+This project is targeting contribution to CoSAI Working Stream 4, an OASIS Open Project. On acceptance, governance will transition to a TSC structure defined in [CHARTER.md](https://github.com/agentrust-io/agent-manifest/blob/main/CHARTER.md). Until then, this document is the governance authority.
 
 ## Amendments
 

@@ -2004,7 +2004,7 @@ Target: Q1 2027. Contribution to CoSAI Working Stream 4 (Secure Design Patterns 
 - Reference implementation contributed as a CoSAI Open Project deliverable
 - Conformance certification program defined
 - Transfer of `manifest.agentrust-io.com` (or successor provisional domain) to CoSAI/OASIS-controlled infrastructure as a condition of v1.0 acceptance. The canonical `@context` URL will be updated to a CoSAI-controlled namespace at this point.
-- Opaque's participation terms under the OASIS Open Projects IPR Policy, including the CLA and the patent non-assert covering non-trivial contributions, reviewed and signed off by counsel before any contribution is filed. See [CHARTER.md](../CHARTER.md) section 4.
+- Opaque's participation terms under the OASIS Open Projects IPR Policy, including the CLA and the patent non-assert covering non-trivial contributions, reviewed and signed off by counsel before any contribution is filed. See [CHARTER.md](https://github.com/agentrust-io/agent-manifest/blob/main/CHARTER.md) section 4.
 
 ### 10.4 Relationship to Existing Standards
 

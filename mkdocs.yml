@@ -6,6 +6,9 @@ repo_name: agentrust-io/agent-manifest
 edit_uri: edit/main/docs/
 docs_dir: docs
 
+exclude_docs: |
+  adr/0000-template.md
+
 theme:
   name: material
   custom_dir: overrides
@@ -138,7 +141,9 @@ extra:
           note: Thanks for your feedback — open an issue to let us know.
 
 extra_css:
-  - stylesheets/extra.css
+  # Shared AgenTrust editorial design system. Deliberately the only stylesheet:
+  # a local override here is how this site drifted to the Material default
+  # violet last time. Change the shared file instead.
   - https://agentrust-io.com/design-system.css
 
 nav:
@@ -203,6 +208,11 @@ nav:
       - Monitoring: operations/monitoring.md
   - Specification:
       - Overview: spec-overview.md
+      - Agent Memory Governance: memory-governance.md
+      # The normative text lives in spec/ at the repository root, outside
+      # docs_dir, so it is linked where it is actually published.
+      - Agent Manifest v0.2: https://github.com/agentrust-io/agent-manifest/blob/main/spec/agent-manifest-spec-v0.2.md
+      - COSE Envelope v0.2: https://github.com/agentrust-io/agent-manifest/blob/main/spec/agent-manifest-cose-envelope-v0.2.md
   - Project:
       - Roadmap: roadmap.md
       - Limitations: limitations.md

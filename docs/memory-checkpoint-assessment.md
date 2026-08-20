@@ -12,11 +12,19 @@ The 0.1 claim is deliberately narrower:
 
 The gating path never uses an LLM judge.
 
-## Material access, deterministic capability, and repeatability are separate
+## Keep three questions separate
 
-A single reproducibility label would conflate distinct properties. The artifact therefore records three concepts independently.
+The design separates:
 
-### Material access
+1. **behavioral result**: did the declared retrieval predicates pass, fail, or remain indeterminate?
+2. **rerun/verifiability**: can another party obtain the bound material and reproduce or verify the run?
+3. **policy consequence**: what does a relying party do with the evidence?
+
+These are deliberately not one enum.
+
+A private-store assessment may still produce a behavioral `pass` or `fail`. Lack of third-party data access limits independent rerun/verifiability; it does not retroactively change the behavioral result.
+
+## Material access
 
 `material_access` describes whether a verifier can obtain the material needed to rerun the assessment:
 
@@ -24,9 +32,9 @@ A single reproducibility label would conflate distinct properties. The artifact 
 - `restricted`
 - `unavailable_to_verifier`
 
-This says nothing about deterministic behavior.
+This field does not determine `pass`, `fail`, or `indeterminate`.
 
-### Deterministic capability
+## Deterministic capability and repeatability evidence
 
 The adapter/profile declares whether it can satisfy the 0.1 deterministic contract:
 
@@ -35,27 +43,29 @@ The adapter/profile declares whether it can satisfy the 0.1 deterministic contra
 
 A declaration alone is not evidence.
 
-### Repeatability evidence
-
 The harness records observed repeatability:
 
 ```yaml
 repeatability:
   trials: 20
   distinct_orderings_observed: 1
-  tie_events_observed: 0
   observed_status: stable
+  tie_events_observed: null
 ```
 
-The initial reference floor is 20 identical runs per probe/profile/state combination. That is an engineering evidence floor, not a mathematical proof of determinism.
+The initial reference floor is 20 identical runs per unique query/state/profile combination. This is an engineering evidence floor, not proof of mathematical determinism.
 
-A profile is eligible for the 0.1 deterministic result path only when the adapter declares deterministic capability, the profile binds an explicit deterministic tie policy, the required repeatability trials ran, `distinct_orderings_observed == 1`, and required runtime observations are present. Otherwise the affected probe is `indeterminate` with an explicit reason code.
+A profile is eligible for the 0.1 deterministic result path only when the adapter declares deterministic capability, the profile binds an explicit deterministic tie policy, the required repeatability trials ran, and `distinct_orderings_observed == 1`.
+
+If the backend can expose tie events, the adapter records `tie_events_observed`; otherwise it records `null`. Tie observability is diagnostic. Declaring deterministic tie behavior is still required for deterministic eligibility.
 
 The terms `verified` and `attested-run-only` are intentionally avoided.
 
-## Retriever profile
+## Configuration profile and state-specific retrieval material
 
-The assessment binds a canonical retriever profile by digest. The profile should include every known element that can materially alter selected context:
+The retriever **configuration profile** is content-addressed separately from the baseline and candidate retrieval states.
+
+The profile includes configuration that should stay fixed across the comparison:
 
 - implementation identity and version/source revision;
 - embedding model identity and immutable revision/digest when available;
@@ -63,9 +73,8 @@ The assessment binds a canonical retriever profile by digest. The profile should
 - tokenizer identity/version where applicable;
 - query normalization/preprocessing;
 - similarity/distance function;
-- index implementation and material build parameters;
-- derived index-state digest when retrieval depends on derived state;
-- namespace/scope/tenant filters;
+- index implementation and build configuration;
+- namespace/scope/tenant filtering rules;
 - top-k and truncation rules;
 - reranker identity/configuration;
 - deterministic tie policy;
@@ -73,21 +82,31 @@ The assessment binds a canonical retriever profile by digest. The profile should
 - harness version;
 - adapter version.
 
-Opaque components are marked opaque. A profile digest proves only which declaration is bound. It does not prove that the running retriever matched that declaration.
+Opaque components are marked opaque. A profile digest proves only which declaration is bound; it does not prove that the running retriever matched that declaration.
+
+State-specific derived material does **not** belong in the shared profile because the candidate is expected to differ from the baseline. Each state reference therefore binds its own retrieval-state evidence:
+
+```yaml
+baseline_state:
+  checkpoint_digest: "sha256:..."
+  retrieval_state_digest: "sha256:..."
+  indexed_item_count: 120
+
+candidate_state:
+  checkpoint_digest: "sha256:..."
+  retrieval_state_digest: "sha256:..."
+  indexed_item_count: 123
+```
+
+`retrieval_state_digest` may identify a derived index snapshot or another adapter-defined immutable retrieval representation when one exists.
 
 ## Runtime consistency observations
 
-To make a false profile declaration easier to detect on rerun, the artifact records cheap observed invariants where available:
+The artifact may record cheap execution observations that make a false declaration easier to detect on rerun, for example adapter/runtime build identity or embedding dimensionality.
 
-```yaml
-runtime_observation:
-  embedding_dimension: 1024
-  indexed_item_count: 12345
-  fingerprint_probe_digest: "sha256:..."
-  observation_digest: "sha256:..."
-```
+These observations are consistency evidence only. They are not attestation, do not prove that an opaque provider executed the declared implementation, and are not required to turn a completed private-store behavioral run into `pass` or `fail`.
 
-These values are consistency evidence, not attestation and not proof that an opaque provider executed the declared implementation.
+A later verifier that can rerun the assessment should report a profile or runtime-observation mismatch as a **verification mismatch**, not as behavioral `indeterminate`.
 
 ## Stable assessment identity
 
@@ -100,21 +119,22 @@ class RetrievedItem:
     item_key: str
     item_version_digest: str
     rank: int
-    score: float | None
     scope_labels: tuple[str, ...]
 ```
+
+Floating retrieval scores are intentionally excluded from the load-bearing 0.1 observation contract. The four initial predicates require identity, order, and scope metadata, not cross-runtime floating-point score equality. An adapter may expose scores as non-gating diagnostics later.
 
 Probe references state where an item key is required:
 
 ```yaml
 item_ref:
   key: "account.owner-name"
-  required_in: baseline
+  required_in: both
 ```
 
 `required_in` is one of `baseline`, `candidate`, or `both`. This distinction matters because an introduced correction can legitimately exist only in the candidate, while an anchor-continuity key must resolve in both states.
 
-If a probe requires a key in both states and the adapter cannot resolve it consistently, the probe is `indeterminate` with reason `id_churn`.
+If a probe requires a key in both states and the adapter cannot resolve it consistently, that probe is `indeterminate` with reason `id_churn`.
 
 Chunked/vector systems that regenerate all logical identities on reindex cannot support transition invariants unless they provide a stable external identity mapping. The 0.1 design states that limitation rather than hiding it behind semantic matching.
 
@@ -124,11 +144,11 @@ A deterministic-eligible profile must declare a deterministic tie policy uncondi
 
 If the backend cannot guarantee deterministic tie resolution, deterministic capability is `unsupported_or_unknown`.
 
-The harness records `tie_events_observed` during repeatability trials. Observing no ties does not remove the requirement to declare the policy.
+## Probe suite and precommitment limit
 
-## Probe suite
+A probe suite is versioned and content-addressed. The reference harness freezes the suite before executing the candidate run and refuses in-process mutation after results begin.
 
-A probe suite is versioned, frozen before execution, and content-addressed. A gating suite must not be rewritten after candidate results are observed.
+A suite digest proves which suite was used. By itself it does **not** prove that the operator selected the suite before seeing candidate behavior. Strong operational precommitment requires an external timestamp, approval record, transparency entry, or other relying-party mechanism. 0.1 states that limit rather than fabricating one.
 
 The initial invariant classes are:
 
@@ -163,26 +183,27 @@ Scope failures are therefore not flattened into an undifferentiated behavioral r
 
 The paired probe declares the expected item inclusion/exclusion or rank relation between two states. No opaque semantic-distance threshold is used in 0.1.
 
-## Result and indeterminate semantics
+## Behavioral result and indeterminate semantics
 
-Per-probe result:
+Per-probe behavioral result:
 
 - `pass`
 - `fail`
 - `indeterminate`
 
-Every `indeterminate` requires one or more reason codes. Initial reason codes are:
+Every `indeterminate` requires one or more behavioral reason codes. Initial reason codes are:
 
 - `adapter_unsupported`
 - `repeatability_unstable`
 - `repeatability_not_run`
 - `baseline_precondition_unmet`
 - `id_churn`
-- `material_unavailable`
-- `runtime_observation_missing`
-- `profile_mismatch`
 
-Aggregate rule:
+Material unavailability is **not** an indeterminate reason. A private or unavailable-to-verifier store can still produce a completed behavioral result; the limitation belongs to rerun/verifiability metadata.
+
+A profile/runtime mismatch discovered during independent verification is also not an indeterminate reason. It is a verification mismatch outside the behavioral result.
+
+Aggregate behavioral rule:
 
 1. any required `fail` => aggregate `fail`;
 2. otherwise any required `indeterminate` => aggregate `indeterminate`;
@@ -203,7 +224,7 @@ This prevents a mostly-indeterminate suite from looking equivalent to a useful a
 
 Cross-assessment downgrade policy is intentionally not invented inside the 0.1 artifact. A relying party may compare previous assessments separately.
 
-## Result is not policy
+## Behavioral result is not policy
 
 The reference harness computes evidence only. The SDK assessment path must not expose a function such as `approve_checkpoint()` or otherwise convert an assessment result into deployment authority.
 
@@ -219,7 +240,7 @@ That mapping belongs in documentation/examples, not the assessment execution pat
 
 The artifact records `assessed_at`. There is no intrinsic TTL in 0.1. The evidence remains a statement about the exact bound inputs.
 
-Reuse is invalid when a load-bearing bound value changes, including the baseline checkpoint digest, candidate checkpoint digest, probe-suite digest, retriever-profile digest, relevant derived index-state digest, or required runtime fingerprint observation.
+Reuse is invalid when a load-bearing bound value changes, including the baseline checkpoint digest, candidate checkpoint digest, baseline/candidate retrieval-state digest, probe-suite digest, or retriever-profile digest.
 
 A relying party may impose a maximum assessment age without changing the artifact's meaning.
 
@@ -233,7 +254,7 @@ Rotated audit suites, held-out acceptance probes, and statistical/nondeterminist
 
 ## Cost and feasibility
 
-For `P` probe/state combinations and `T` repeatability trials, the deterministic evidence path requires approximately `P × T` retrieval calls, plus baseline/candidate calls required by transition predicates.
+Let `R` be the number of unique retrieval invocations across all probe/state references and `T` the repeatability trial floor. The repeatability evidence path requires approximately `R × T` retrieval calls.
 
 The reference fixture adapter requires no reindexing. Production adapters may require prebuilt baseline and candidate snapshots. The 0.1 harness does not require rebuilding an index solely to run the assessment.
 
@@ -244,24 +265,28 @@ The artifact may record operational run statistics such as retrieval-call count 
 ```yaml
 type: MemoryCheckpointAssessment
 version: "0.1"
-baseline_checkpoint_digest: "sha256:..."
-candidate_checkpoint_digest: "sha256:..."
+
+baseline_state:
+  checkpoint_digest: "sha256:..."
+  retrieval_state_digest: "sha256:..."
+  indexed_item_count: 8
+
+candidate_state:
+  checkpoint_digest: "sha256:..."
+  retrieval_state_digest: "sha256:..."
+  indexed_item_count: 9
+
 probe_suite_digest: "sha256:..."
 retriever_profile_digest: "sha256:..."
 assessed_at: "2026-08-20T00:00:00Z"
-material_access: public
+material_access: restricted
 
 determinism:
   adapter_capability: deterministic
   trials: 20
   distinct_orderings_observed: 1
-  tie_events_observed: 0
   observed_status: stable
-
-runtime_observation:
-  embedding_dimension: 1024
-  indexed_item_count: 8
-  fingerprint_probe_digest: "sha256:..."
+  tie_events_observed: null
 
 coverage:
   required_probe_count: 4
@@ -276,13 +301,13 @@ security_flags:
 result: pass
 ```
 
-Signing/envelope semantics remain deliberately deferred. The payload must not invent a second signature architecture beside Agent Manifest's existing COSE direction.
+Signing/envelope semantics remain deliberately deferred. An unsigned payload cannot prove producer provenance. The first implementation should therefore describe producer identity as metadata unless and until maintainers choose an existing AgentTrust signing/envelope primitive. The payload must not invent a second signature architecture beside the project's current COSE direction.
 
 ## First implementation boundary
 
 The first implementation should include typed Pydantic models, a deterministic adapter protocol, a public deterministic fixture adapter, canonical digests that reuse existing repository primitives, and positive/negative vectors for the four initial invariants.
 
-Negative vectors should cover baseline-precondition failure, ID churn, unsupported adapter capability, unstable repeatability, scope-leak severity, tie behavior, and profile/runtime observation mismatch.
+Negative vectors should cover baseline-precondition failure, ID churn, unsupported adapter capability, unstable repeatability, scope-leak severity, tie behavior, profile/configuration change, and state-digest change.
 
 The first PR should not modify `spec/` unless maintainers explicitly request it. It should add no external dependency and no SDK promotion/approval function.
 
@@ -300,6 +325,6 @@ Abandon or materially redesign this wedge before implementation if any of the fo
 
 ## Prior-art note
 
-Issue #298 names Pulse and the Pulse paper as implementation references. Relevant lessons for this design include freezing cases before seeing candidate results, retaining IDs/digests/scores/timings/counts in result receipts, marking boundary checks inconclusive when execution errors prevent evaluation, and keeping retrieval evidence separate from LLM-judged answer accuracy.
+Issue #298 names Pulse and the Pulse paper as implementation references. Relevant lessons for this design include freezing cases before seeing candidate results, retaining stable identifiers and digests in result receipts, marking boundary checks inconclusive when execution errors prevent evaluation, and keeping retrieval evidence separate from LLM-judged answer accuracy.
 
 These are design influences, not dependencies. AgentTrust must not depend on Pulse.

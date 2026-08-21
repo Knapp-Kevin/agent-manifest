@@ -11,21 +11,20 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Callable, Literal, Protocol, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ._canonicalize import canonical_hash
 from ._types import HashValue
 
 
 MIN_REPEATABILITY_TRIALS = 20
-
 JsonScalar: TypeAlias = str | int | bool | None
 
 
 class AssessmentModel(BaseModel):
-    """Strict base model for the non-normative assessment artifact."""
+    """Strict, immutable base model for assessment evidence."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class BehavioralResult(str, Enum):
@@ -89,13 +88,16 @@ class RetrieverProfile(AssessmentModel):
     truncation_rule: str
     reranker_id: str | None = None
     reranker_config: dict[str, JsonScalar] = Field(default_factory=dict)
-    tie_policy: str
+    tie_policy: str | None = None
     seed: int | None = None
     opaque_components: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _require_tie_policy_for_deterministic(self) -> "RetrieverProfile":
-        if self.adapter_capability is AdapterCapability.deterministic and not self.tie_policy.strip():
+        if (
+            self.adapter_capability is AdapterCapability.deterministic
+            and not (self.tie_policy or "").strip()
+        ):
             raise ValueError("deterministic profiles require an explicit tie_policy")
         return self
 
@@ -287,29 +289,31 @@ class MemoryCheckpointAssessment(AssessmentModel):
     security_flags: SecurityFlags
     result: BehavioralResult
 
+    @field_validator("assessed_at")
+    @classmethod
+    def _require_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("assessed_at must be timezone-aware")
+        return value
+
 
 class RetrieverAdapter(Protocol):
     """Minimal execution boundary for a memory assessment retriever."""
 
     @property
-    def profile(self) -> RetrieverProfile:
-        ...
+    def profile(self) -> RetrieverProfile: ...
 
-    def state_reference(self, state_name: str) -> StateReference:
-        ...
+    def state_reference(self, state_name: str) -> StateReference: ...
 
-    def contains_item_key(self, state_name: str, item_key: str) -> bool:
-        ...
+    def contains_item_key(self, state_name: str, item_key: str) -> bool: ...
 
     def retrieve(
         self,
         state_name: str,
         request: RetrievalRequest,
-    ) -> Sequence[RetrievedItem]:
-        ...
+    ) -> Sequence[RetrievedItem]: ...
 
-    def runtime_observation(self) -> RuntimeObservation | None:
-        ...
+    def runtime_observation(self) -> RuntimeObservation | None: ...
 
 
 def canonical_model_hash(model: BaseModel) -> HashValue:
@@ -319,12 +323,21 @@ def canonical_model_hash(model: BaseModel) -> HashValue:
     return HashValue(digest)
 
 
-def _ordered_identity(items: Sequence[RetrievedItem]) -> tuple[tuple[str, str], ...]:
+def _ordered_identity(
+    items: Sequence[RetrievedItem],
+) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
     ordered = sorted(items, key=lambda item: item.rank)
     ranks = [item.rank for item in ordered]
     if len(ranks) != len(set(ranks)):
         raise ValueError("retrieval result contains duplicate ranks")
-    return tuple((item.item_key, str(item.item_version_digest)) for item in ordered)
+    return tuple(
+        (
+            item.item_key,
+            str(item.item_version_digest),
+            tuple(sorted(item.scope_labels)),
+        )
+        for item in ordered
+    )
 
 
 def _by_key(items: Sequence[RetrievedItem]) -> dict[str, RetrievedItem]:
@@ -356,7 +369,8 @@ class AssessmentHarness:
         material_access: MaterialAccess = MaterialAccess.public,
         assessed_at: datetime | None = None,
     ) -> MemoryCheckpointAssessment:
-        profile = adapter.profile
+        profile = adapter.profile.model_copy(deep=True)
+        suite_snapshot = suite.model_copy(deep=True)
         cache: dict[
             tuple[str, str], tuple[tuple[RetrievedItem, ...], RepeatabilityEvidence]
         ] = {}
@@ -366,7 +380,8 @@ class AssessmentHarness:
             state_name: str,
             request: RetrievalRequest,
         ) -> tuple[tuple[RetrievedItem, ...], RepeatabilityEvidence]:
-            request_digest = canonical_model_hash(request)
+            request_snapshot = request.model_copy(deep=True)
+            request_digest = canonical_model_hash(request_snapshot)
             key = (state_name, str(request_digest))
             if key in cache:
                 return cache[key]
@@ -379,10 +394,16 @@ class AssessmentHarness:
                 result: tuple[RetrievedItem, ...] = ()
             else:
                 observations: dict[
-                    tuple[tuple[str, str], ...], tuple[RetrievedItem, ...]
+                    tuple[tuple[str, str, tuple[str, ...]], ...],
+                    tuple[RetrievedItem, ...],
                 ] = {}
                 for _ in range(self._repeatability_trials):
-                    current = tuple(adapter.retrieve(state_name, request))
+                    current = tuple(
+                        adapter.retrieve(
+                            state_name,
+                            request_snapshot.model_copy(deep=True),
+                        )
+                    )
                     ordering = _ordered_identity(current)
                     observations.setdefault(ordering, current)
                 distinct = len(observations)
@@ -402,17 +423,17 @@ class AssessmentHarness:
             )
             return result, evidence
 
-        results: list[ProbeResult] = []
-        for probe in suite.probes:
-            results.append(
-                self._evaluate_probe(
-                    adapter,
-                    probe,
-                    baseline_state_name,
-                    candidate_state_name,
-                    collect,
-                )
+        results = [
+            self._evaluate_probe(
+                adapter,
+                probe,
+                baseline_state_name,
+                candidate_state_name,
+                collect,
+                profile.adapter_capability,
             )
+            for probe in suite_snapshot.probes
+        ]
 
         required = [result for result in results if result.required]
         passed = sum(result.result is BehavioralResult.pass_ for result in required)
@@ -439,13 +460,13 @@ class AssessmentHarness:
             contains_confidentiality_failure=any(
                 result.result is BehavioralResult.fail
                 and result.severity is SeverityClass.confidentiality
-                for result in required
+                for result in results
             )
         )
         return MemoryCheckpointAssessment(
             baseline_state=adapter.state_reference(baseline_state_name),
             candidate_state=adapter.state_reference(candidate_state_name),
-            probe_suite_digest=canonical_model_hash(suite),
+            probe_suite_digest=canonical_model_hash(suite_snapshot),
             retriever_profile_digest=canonical_model_hash(profile),
             assessed_at=assessed_at or datetime.now(timezone.utc),
             material_access=material_access,
@@ -473,8 +494,8 @@ class AssessmentHarness:
                     return False
         return True
 
+    @staticmethod
     def _repeatability_reason(
-        self,
         evidence: Sequence[RepeatabilityEvidence],
         capability: AdapterCapability,
     ) -> IndeterminateReason | None:
@@ -496,13 +517,8 @@ class AssessmentHarness:
             [str, RetrievalRequest],
             tuple[tuple[RetrievedItem, ...], RepeatabilityEvidence],
         ],
+        capability: AdapterCapability,
     ) -> ProbeResult:
-        def get(
-            state_name: str,
-            request: RetrievalRequest,
-        ) -> tuple[tuple[RetrievedItem, ...], RepeatabilityEvidence]:
-            return collect(state_name, request)
-
         if isinstance(probe, CorrectionPrecedenceProbe):
             refs = (probe.superseded, probe.correction)
             if not self._identity_precondition(
@@ -510,11 +526,9 @@ class AssessmentHarness:
             ):
                 return self._indeterminate(probe, IndeterminateReason.id_churn)
             request = RetrievalRequest(query=probe.query, context=probe.context)
-            baseline, base_rep = get(baseline_state_name, request)
-            candidate, cand_rep = get(candidate_state_name, request)
-            repeat_reason = self._repeatability_reason(
-                (base_rep, cand_rep), adapter.profile.adapter_capability
-            )
+            baseline, base_rep = collect(baseline_state_name, request)
+            candidate, cand_rep = collect(candidate_state_name, request)
+            repeat_reason = self._repeatability_reason((base_rep, cand_rep), capability)
             if repeat_reason is not None:
                 return self._indeterminate(probe, repeat_reason)
             base_by_key = _by_key(baseline)
@@ -542,11 +556,9 @@ class AssessmentHarness:
             ):
                 return self._indeterminate(probe, IndeterminateReason.id_churn)
             request = RetrievalRequest(query=probe.query, context=probe.context)
-            baseline, base_rep = get(baseline_state_name, request)
-            candidate, cand_rep = get(candidate_state_name, request)
-            repeat_reason = self._repeatability_reason(
-                (base_rep, cand_rep), adapter.profile.adapter_capability
-            )
+            baseline, base_rep = collect(baseline_state_name, request)
+            candidate, cand_rep = collect(candidate_state_name, request)
+            repeat_reason = self._repeatability_reason((base_rep, cand_rep), capability)
             if repeat_reason is not None:
                 return self._indeterminate(probe, repeat_reason)
             baseline_anchor = _by_key(baseline).get(probe.anchor.key)
@@ -566,10 +578,8 @@ class AssessmentHarness:
 
         if isinstance(probe, ScopeIsolationProbe):
             request = RetrievalRequest(query=probe.query, context=probe.context)
-            candidate, evidence = get(candidate_state_name, request)
-            repeat_reason = self._repeatability_reason(
-                (evidence,), adapter.profile.adapter_capability
-            )
+            candidate, evidence = collect(candidate_state_name, request)
+            repeat_reason = self._repeatability_reason((evidence,), capability)
             if repeat_reason is not None:
                 return self._indeterminate(probe, repeat_reason)
             forbidden_keys = set(probe.forbidden_item_keys)
@@ -596,11 +606,9 @@ class AssessmentHarness:
                 return self._indeterminate(probe, IndeterminateReason.id_churn)
             request_a = RetrievalRequest(query=probe.query, context=probe.context_a)
             request_b = RetrievalRequest(query=probe.query, context=probe.context_b)
-            items_a, evidence_a = get(candidate_state_name, request_a)
-            items_b, evidence_b = get(candidate_state_name, request_b)
-            repeat_reason = self._repeatability_reason(
-                (evidence_a, evidence_b), adapter.profile.adapter_capability
-            )
+            items_a, evidence_a = collect(candidate_state_name, request_a)
+            items_b, evidence_b = collect(candidate_state_name, request_b)
+            repeat_reason = self._repeatability_reason((evidence_a, evidence_b), capability)
             if repeat_reason is not None:
                 return self._indeterminate(probe, repeat_reason)
             keys_a = tuple(item.item_key for item in sorted(items_a, key=lambda item: item.rank))

@@ -18,6 +18,7 @@ from agent_manifest._memory_assessment import (
     RuntimeObservation,
     StateReference,
 )
+from tests.memory_assessment_vector_builder import build_reference_vectors
 
 
 _FIXTURE = (
@@ -107,6 +108,15 @@ def _vectors() -> dict[str, Any]:
 
 def _case_ids() -> list[str]:
     return [case["id"] for case in _vectors()["cases"]]
+
+
+def test_committed_reference_vectors_match_builder() -> None:
+    """The portable JSON must remain reproducible from its source builder."""
+
+    assert _vectors() == build_reference_vectors(), (
+        "committed MemoryCheckpointAssessment reference vectors differ from "
+        "the deterministic builder; regenerate the JSON and review the diff"
+    )
 
 
 @pytest.mark.parametrize("case_id", _case_ids())

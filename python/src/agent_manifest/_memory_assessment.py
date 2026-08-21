@@ -28,7 +28,8 @@ class AssessmentModel(BaseModel):
 
 
 class BehavioralResult(str, Enum):
-    pass_ = "pass"
+    # Bandit B105 is a false positive here: this is a public result token.
+    pass_ = "pass"  # nosec B105
     fail = "fail"
     indeterminate = "indeterminate"
 
@@ -584,17 +585,17 @@ class AssessmentHarness:
                 return self._indeterminate(probe, repeat_reason)
             forbidden_keys = set(probe.forbidden_item_keys)
             forbidden_scopes = set(probe.forbidden_scope_labels)
-            violations: list[str] = []
+            scope_violations: list[str] = []
             for item in candidate:
                 if item.item_key in forbidden_keys:
-                    violations.append(f"forbidden item {item.item_key!r} was retrieved")
+                    scope_violations.append(f"forbidden item {item.item_key!r} was retrieved")
                 overlap = forbidden_scopes.intersection(item.scope_labels)
                 if overlap:
-                    violations.append(
+                    scope_violations.append(
                         f"item {item.item_key!r} carried forbidden scope labels {sorted(overlap)!r}"
                     )
-            if violations:
-                return self._fail(probe, *violations)
+            if scope_violations:
+                return self._fail(probe, *scope_violations)
             return self._pass(probe)
 
         if isinstance(probe, StateConditionedDifferentiationProbe):
@@ -615,23 +616,23 @@ class AssessmentHarness:
             keys_b = tuple(item.item_key for item in sorted(items_b, key=lambda item: item.rank))
             set_a = set(keys_a)
             set_b = set(keys_b)
-            violations: list[str] = []
+            state_violations: list[str] = []
             for key in probe.a_required_keys:
                 if key not in set_a:
-                    violations.append(f"context A did not retrieve required item {key!r}")
+                    state_violations.append(f"context A did not retrieve required item {key!r}")
             for key in probe.a_forbidden_keys:
                 if key in set_a:
-                    violations.append(f"context A retrieved forbidden item {key!r}")
+                    state_violations.append(f"context A retrieved forbidden item {key!r}")
             for key in probe.b_required_keys:
                 if key not in set_b:
-                    violations.append(f"context B did not retrieve required item {key!r}")
+                    state_violations.append(f"context B did not retrieve required item {key!r}")
             for key in probe.b_forbidden_keys:
                 if key in set_b:
-                    violations.append(f"context B retrieved forbidden item {key!r}")
+                    state_violations.append(f"context B retrieved forbidden item {key!r}")
             if probe.require_distinct_ordering and keys_a == keys_b:
-                violations.append("context A and B produced identical ordered item identities")
-            if violations:
-                return self._fail(probe, *violations)
+                state_violations.append("context A and B produced identical ordered item identities")
+            if state_violations:
+                return self._fail(probe, *state_violations)
             return self._pass(probe)
 
         raise TypeError(f"unsupported probe type {type(probe).__name__}")

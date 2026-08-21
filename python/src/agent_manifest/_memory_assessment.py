@@ -297,6 +297,68 @@ class MemoryCheckpointAssessment(AssessmentModel):
             raise ValueError("assessed_at must be timezone-aware")
         return value
 
+    @model_validator(mode="after")
+    def _validate_internal_consistency(self) -> "MemoryCheckpointAssessment":
+        probe_ids = [item.probe_id for item in self.probe_results]
+        if len(probe_ids) != len(set(probe_ids)):
+            raise ValueError("probe_results must contain unique probe_id values")
+
+        invocation_ids = [
+            (item.state_name, str(item.request_digest))
+            for item in self.invocation_evidence
+        ]
+        if len(invocation_ids) != len(set(invocation_ids)):
+            raise ValueError(
+                "invocation_evidence must contain unique state/request pairs"
+            )
+
+        required = [item for item in self.probe_results if item.required]
+        if not required:
+            raise ValueError("assessment must contain at least one required probe result")
+
+        passed = sum(item.result is BehavioralResult.pass_ for item in required)
+        failed = sum(item.result is BehavioralResult.fail for item in required)
+        indeterminate = sum(
+            item.result is BehavioralResult.indeterminate for item in required
+        )
+        count = len(required)
+        expected_rate = indeterminate / count
+
+        if self.coverage.required_probe_count != count:
+            raise ValueError("coverage.required_probe_count does not match probe_results")
+        if self.coverage.passed != passed:
+            raise ValueError("coverage.passed does not match probe_results")
+        if self.coverage.failed != failed:
+            raise ValueError("coverage.failed does not match probe_results")
+        if self.coverage.indeterminate != indeterminate:
+            raise ValueError("coverage.indeterminate does not match probe_results")
+        if abs(self.coverage.indeterminate_rate - expected_rate) > 1e-12:
+            raise ValueError("coverage.indeterminate_rate does not match probe_results")
+
+        expected_result = (
+            BehavioralResult.fail
+            if failed
+            else BehavioralResult.indeterminate
+            if indeterminate
+            else BehavioralResult.pass_
+        )
+        if self.result is not expected_result:
+            raise ValueError("assessment result does not match required probe results")
+
+        confidentiality_failure = any(
+            item.result is BehavioralResult.fail
+            and item.severity is SeverityClass.confidentiality
+            for item in self.probe_results
+        )
+        if (
+            self.security_flags.contains_confidentiality_failure
+            != confidentiality_failure
+        ):
+            raise ValueError(
+                "security_flags.contains_confidentiality_failure does not match probe_results"
+            )
+        return self
+
 
 class RetrieverAdapter(Protocol):
     """Minimal execution boundary for a memory assessment retriever."""

@@ -88,6 +88,8 @@ class HitlResult(str, Enum):
     NOT_REQUIRED = "NOT_REQUIRED"
     MISSING = "MISSING"
     APPROVAL_INSUFFICIENT = "APPROVAL_INSUFFICIENT"
+    INVALID = "INVALID"
+    UNVERIFIABLE = "UNVERIFIABLE"
 
 
 class MismatchDetail(BaseModel):
@@ -188,6 +190,11 @@ class VerifyRequest(BaseModel):
     ``trusted_key_issuers`` maps each trusted key_id to the issuer SPIFFE URIs
     authorized to sign manifests with that key. When supplied, key-to-issuer
     authorization is fail-closed.
+
+    ``approver_public_keys`` maps the human-attributable ``approver_id`` on a
+    HITL approval to its trusted Ed25519 public key. HITL verification is
+    fail-closed: an approval without a trusted key is ``UNVERIFIABLE`` and an
+    invalid signature is ``INVALID``; neither can produce ``VALID``.
     """
 
     manifest_id: str
@@ -199,6 +206,8 @@ class VerifyRequest(BaseModel):
     trusted_key_issuers: dict[str, list[str]] = Field(default_factory=dict)
     # principal_id -> base64url-encoded public key bytes (for delegation chain)
     delegation_public_keys: dict[str, str] = Field(default_factory=dict)
+    # approver_id -> base64url-encoded Ed25519 public key bytes (for HITL)
+    approver_public_keys: dict[str, str] = Field(default_factory=dict)
     # When True, a manifest without a delegation_chain is a verification failure
     require_delegation: bool = False
 
@@ -265,6 +274,8 @@ class VerificationContext(BaseModel):
     trusted_key_issuers: dict[str, list[str]] = Field(default_factory=dict)
     # principal_id -> base64url-encoded public key bytes (for delegation chain)
     delegation_public_keys: dict[str, str] = Field(default_factory=dict)
+    # approver_id -> base64url-encoded Ed25519 public key bytes (for HITL)
+    approver_public_keys: dict[str, str] = Field(default_factory=dict)
     # When True, bound artifacts without runtime hashes cause INCOMPLETE result
     strict_artifact_verification: bool = False
     # When True, manifest must have a delegation chain
@@ -580,6 +591,8 @@ def verify_manifest(
       result is ``UNVERIFIABLE`` (spec 3.4.1 / 5.2).
     - ``enforce_hitl=True`` with no ``hitl_record`` in the manifest is a
       failure (``HitlResult.MISSING`` and a non-VALID overall result).
+    - An approval is never ``APPROVED`` unless its own signature verifies with
+      a trusted approver key and binds the current manifest ID and scope.
 
     The ``_envelope`` parameter is internal: it carries an already-appraised
     COSE envelope into the shared pipeline and is not part of the public API.
@@ -1014,10 +1027,19 @@ def verify_manifest(
                 ))
             fields.hitl_record = HitlResult.MISSING
         else:
-            # Check if any approval has expired (HITL-001: parse failure must set all_ok=False)
+            # Approval entries attach outside the manifest/COSE signature and
+            # MUST be authenticated independently (spec 3.5, 3.6, and 5.3).
+            # Presence, lifetime, and method checks alone do not prove that a
+            # human approved this manifest: the signature pre-image binds the
+            # manifest ID, approver, timestamp, and exact scope.
+            from ._delegation import verify_hitl_approval
+            from ._signing import _b64url_decode
+
             now = datetime.now(timezone.utc)
             all_ok = True
             approval_insufficient = False
+            approval_invalid = False
+            approval_unverifiable = False
             for approval in approvals:
                 approved_at = approval.get("approved_at", "")
                 duration = approval.get("approved_scope", {}).get("approval_duration_seconds", 0)
@@ -1040,7 +1062,36 @@ def verify_manifest(
                     ):
                         approval_insufficient = True
                         break
-            if approval_insufficient:
+
+                approver_id = approval.get("approver_id")
+                public_key_b64 = context.approver_public_keys.get(approver_id)
+                if public_key_b64 is None:
+                    approval_unverifiable = True
+                    break
+                try:
+                    verify_hitl_approval(
+                        approval,
+                        manifest_id,
+                        _b64url_decode(public_key_b64),
+                    )
+                except (InvalidSignature, KeyError, TypeError, ValueError):
+                    approval_invalid = True
+                    break
+
+            if approval_unverifiable:
+                fields.hitl_record = HitlResult.UNVERIFIABLE
+                result.warnings.append(
+                    "HITL approval could not be authenticated: no trusted "
+                    "approver key is available for its approver_id"
+                )
+            elif approval_invalid:
+                mismatches.append(MismatchDetail(
+                    field="hitl_record.approval_signature",
+                    expected_hash="<valid approval signature bound to this manifest>",
+                    actual_hash="<invalid or malformed approval signature>",
+                ))
+                fields.hitl_record = HitlResult.INVALID
+            elif approval_insufficient:
                 mismatches.append(MismatchDetail(
                     field="hitl_record",
                     expected_hash="<approval method sufficient for declared risk tier>",
@@ -1121,6 +1172,8 @@ def verify_manifest(
         # the manifest cannot be authenticated. Never VALID.
         result.result = OverallResult.UNVERIFIABLE
     elif fields.delegation_chain == DelegationResult.UNVERIFIABLE:
+        result.result = OverallResult.UNVERIFIABLE
+    elif fields.hitl_record == HitlResult.UNVERIFIABLE:
         result.result = OverallResult.UNVERIFIABLE
     elif OverallResult.VALID == result.result:
         # A composition-only document authenticates a contribution to a future
@@ -1400,8 +1453,10 @@ def create_router(
         The request body carries ``trusted_keys`` (key_id -> base64url public
         key) used for manifest signature verification, optionally
         ``trusted_key_issuers`` (key_id -> issuer SPIFFE URIs) for key issuer
-        authorization, and optionally ``delegation_public_keys`` (principal_id
-        -> base64url public key) for delegation chain verification.
+        authorization, optionally ``delegation_public_keys`` (principal_id ->
+        base64url public key) for delegation chain verification, and optionally
+        ``approver_public_keys`` (approver_id -> base64url Ed25519 public key)
+        for HITL approval verification.
         Verification is fail-closed - see :func:`verify_manifest`.
         """
         manifest = _lookup_manifest(request.manifest_id)
@@ -1411,6 +1466,7 @@ def create_router(
             trusted_keys=request.trusted_keys,
             trusted_key_issuers=request.trusted_key_issuers,
             delegation_public_keys=request.delegation_public_keys,
+            approver_public_keys=request.approver_public_keys,
             require_delegation=request.require_delegation,
         )
         return verify_manifest(manifest, ctx, revocation_store)

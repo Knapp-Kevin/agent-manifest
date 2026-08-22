@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from agent_manifest import _signing
+from agent_manifest._delegation import HitlApprovalSigner
 from agent_manifest._signing import Ed25519Signer, _b64url_encode, generate_ed25519
 from agent_manifest._verify import (
     DelegationResult,
@@ -26,6 +27,8 @@ SHA = "sha256:" + "a" * 64
 # require a signed manifest and the matching trusted key in the context.
 KP = generate_ed25519()
 TRUSTED_KEYS = {KP.key_id: KP.public_b64url()}
+APPROVER_KP = generate_ed25519()
+APPROVER_ID = "mailto:alice@example.com"
 ISSUER_A = "spiffe://trust.example/issuer/a"
 ISSUER_B = "spiffe://trust.example/issuer/b"
 
@@ -67,6 +70,7 @@ def base_context(**overrides):
         policy_bundle_hash="sha256:" + "b" * 64,
         model_version="claude-3",
         trusted_keys=dict(TRUSTED_KEYS),
+        approver_public_keys={APPROVER_ID: APPROVER_KP.public_b64url()},
     )
     for k, v in overrides.items():
         setattr(ctx, k, v)
@@ -75,6 +79,22 @@ def base_context(**overrides):
 
 def store():
     return RevocationStore()
+
+
+def hitl_approval(approved_at, approved_scope, **overrides):
+    approval = {
+        "approver_id": APPROVER_ID,
+        "approved_at": approved_at,
+        "approved_scope": approved_scope,
+    }
+    approval.update(overrides)
+    approval["approval_signature"] = HitlApprovalSigner(APPROVER_KP).sign_approval(
+        manifest_id=base_manifest()["manifest_id"],
+        approved_at=approval["approved_at"],
+        approved_scope=approval["approved_scope"],
+        approver_id=approval["approver_id"],
+    )
+    return approval
 
 
 # ---------------------------------------------------------------------------
@@ -213,10 +233,9 @@ def test_hitl_approved():
     approval_time = (NOW - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
     m = base_manifest(hitl_record={
         "required": True,
-        "approvals": [{
-            "approved_at": approval_time,
-            "approved_scope": {"approval_duration_seconds": 7200},
-        }],
+        "approvals": [hitl_approval(
+            approval_time, {"approval_duration_seconds": 7200}
+        )],
     })
     result = verify_manifest(m, base_context(), store())
     assert result.fields_verified.hitl_record == HitlResult.APPROVED
@@ -631,10 +650,9 @@ def test_enforce_hitl_with_valid_approval_passes():
     approval_time = (NOW - timedelta(minutes=30)).isoformat().replace("+00:00", "Z")
     m = base_manifest(hitl_record={
         "required": True,
-        "approvals": [{
-            "approved_at": approval_time,
-            "approved_scope": {"approval_duration_seconds": 7200},
-        }],
+        "approvals": [hitl_approval(
+            approval_time, {"approval_duration_seconds": 7200}
+        )],
     })
     result = verify_manifest(m, base_context(enforce_hitl=True), store())
     assert result.fields_verified.hitl_record == HitlResult.APPROVED
@@ -667,14 +685,13 @@ def test_level_2_accepts_hardware_key_for_high_risk_approval():
     approval_time = (NOW - timedelta(minutes=30)).isoformat().replace("+00:00", "Z")
     m = base_manifest(hitl_record={
         "required": True,
-        "approvals": [{
-            "approved_at": approval_time,
-            "approved_scope": {
+        "approvals": [hitl_approval(
+            approval_time, {
                 "approval_duration_seconds": 7200,
                 "risk_tier": "high",
             },
-            "approval_method": "hardware-key",
-        }],
+            approval_method="hardware-key",
+        )],
     })
     result = verify_manifest(
         m,

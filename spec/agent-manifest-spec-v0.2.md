@@ -1296,6 +1296,7 @@ Content-Type: application/json
     "verifier_id": "<SPIFFE URI of verifying party>  -- OPTIONAL",
     "required_fields": ["system_prompt", "policy_bundle", "tool_manifest"],
     "enforce_hitl": "<boolean>  -- OPTIONAL, default false",
+    "approver_public_keys": "<object mapping approver_id to trusted base64url Ed25519 public key>  -- REQUIRED when a HITL approval is evaluated",
     "enforce_attestation": "<boolean>  -- OPTIONAL, default false",
     "min_slsa_level": "1 | 2 | 3 | 4  -- OPTIONAL"
   }
@@ -1356,7 +1357,7 @@ A service that receives no `challenge_nonce` returns a result without one, and a
     "decision_trace": "MATCH | EXTENDED | MISMATCH | NOT_BOUND  -- REQUIRED",
     "supply_chain": "MATCH | MISMATCH | NOT_BOUND  -- REQUIRED",
     "delegation_chain": "VALID | INVALID | NOT_PRESENT | UNVERIFIABLE  -- REQUIRED",
-    "hitl_record": "APPROVED | EXPIRED | NOT_REQUIRED | MISSING | APPROVAL_INSUFFICIENT  -- REQUIRED"
+    "hitl_record": "APPROVED | EXPIRED | NOT_REQUIRED | MISSING | APPROVAL_INSUFFICIENT | INVALID | UNVERIFIABLE  -- REQUIRED"
   },
   "configuration_assurance": "PASSED | FLAGGED | NOT_ASSESSED  -- REQUIRED",
   "mismatch_details": [
@@ -1391,6 +1392,8 @@ A service that receives no `challenge_nonce` returns a result without one, and a
 `configuration_assurance` reports the state of `system_prompt.assurance_test` (section 3.2.1.1): `PASSED` when an assessment ran and found no violation, `FLAGGED` when one ran and did, and `NOT_ASSESSED` when the block is absent or carries `not-assessed`. `FLAGGED` MUST cause the overall result to be `MISMATCH`. `NOT_ASSESSED` does not affect the overall result in v0.2 and is reported so that a relying party can tell an assessed configuration from an unassessed one rather than inferring a pass from silence.
 
 `hitl_record` returns `APPROVAL_INSUFFICIENT` when an approval exists but does not meet the `approval_method` requirement for the declared `risk_tier` (e.g., `software-key` approval on a `high` risk tier operation at Level 2).
+
+`hitl_record` returns `INVALID` when an approval's own signature is malformed or does not verify over the current `manifest_id`, `approver_id`, `approved_at`, and exact `approved_scope`. It returns `UNVERIFIABLE` when the verifier has no trusted public key for the approval's `approver_id`. Neither state permits an overall `VALID` result. A manifest or COSE signature does not authenticate approval entries, which attach after issuance and MUST be verified independently.
 
 `challenge_nonce` and `verification_context_hash` bind a result to the request that produced it; see section 5.1.2 for how a relying party checks them and why a `verified_at` timestamp is not a substitute.
 

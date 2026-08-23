@@ -394,14 +394,14 @@ def test_http_get_verify_without_keys_is_unverifiable():
 
 
 @require_fastapi
-def test_http_post_verify_with_trusted_keys_is_valid():
+def test_http_post_verify_with_trusted_keys_is_incomplete_without_runtime_evidence():
     client, _ = _client()
     r = client.post("/verify", json={
         "manifest_id": MID,
         "trusted_keys": TRUSTED_KEYS,
     })
     assert r.status_code == 200
-    assert r.json()["result"] == "VALID"
+    assert r.json()["result"] == "INCOMPLETE"
     assert r.json()["signature_verified"] is True
 
 

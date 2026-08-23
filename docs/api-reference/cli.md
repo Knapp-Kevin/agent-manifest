@@ -120,6 +120,8 @@ Options:
   --enforce-attestation  Fail unless the attestation report matches the manifest hash
   --crl-path TEXT        Path to a FileCRL JSON-Lines file for revocation checks
   --public-key TEXT      Path to a trusted raw Ed25519 public key hex file
+  --signature-only       Authenticate only the manifest signature; explicitly allow
+                         bound runtime artifacts to remain unchecked
   -o, --output TEXT      Write output to file (default: stdout)
   --help                 Show this message and exit.
 ```

@@ -277,7 +277,10 @@ class VerificationContext(BaseModel):
     # approver_id -> base64url-encoded Ed25519 public key bytes (for HITL)
     approver_public_keys: dict[str, str] = Field(default_factory=dict)
     # When True, bound artifacts without runtime hashes cause INCOMPLETE result
-    strict_artifact_verification: bool = False
+    # Safe by default: an authentic manifest is not proof that the running
+    # artifacts match it. Callers performing an intentional signature-only
+    # appraisal must opt out explicitly.
+    strict_artifact_verification: bool = True
     # When True, manifest must have a delegation chain
     require_delegation: bool = False
     # Conformance level for enforcing spec §3.2.5.1 poisoning_scan rules.

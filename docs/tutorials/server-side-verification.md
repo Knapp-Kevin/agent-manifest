@@ -173,7 +173,7 @@ if not result.attestation_verified:
 | `EXPIRED` | `expires_at` is in the past | Block; agent must re-issue the manifest |
 | `MISMATCH` | One or more artifact hashes differ | Block; agent may have drifted or been tampered with |
 | `ATTESTATION_UNAVAILABLE` | `enforce_attestation` set but no attestation present | Block in prod, warn in dev |
-| `INCOMPLETE` | `strict_artifact_verification` set and bound fields lack runtime hashes | Block |
+| `INCOMPLETE` | Bound fields lack runtime hashes; this is the safe default | Block |
 | `INCOMPATIBLE_VERSION` | Manifest spec version not supported | Upgrade the SDK |
 
 Inspect `mismatch_details` to identify which artifacts failed:
@@ -183,6 +183,8 @@ if result.result == OverallResult.MISMATCH:
     for detail in result.mismatch_details:
         print(f"  [{detail.field}] expected={detail.expected_hash} got={detail.actual_hash}")
 ```
+
+An auditor that intentionally wants to authenticate only the manifest document, without making any claim about the running artifacts, can construct `VerificationContext(strict_artifact_verification=False)`. This is an explicit scope reduction: callers must label the result as signature-only and must not use it as an authorization decision about the deployed agent.
 
 ---
 

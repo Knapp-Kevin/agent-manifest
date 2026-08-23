@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- **[SECURITY][SDK]** The integrated verification path now authenticates every
+  enforced HITL approval against a trusted approver key and binds that approval
+  to the manifest being verified. Missing keys, malformed or invalid approval
+  signatures, and approvals replayed from another manifest fail closed. See
+  GHSA-ww2p-prj4-c6xf.
+
 ### Added
 
 - **[SPEC][SDK]** Added configuration assurance for artifact #1 (spec 3.2.1.1,

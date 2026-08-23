@@ -321,6 +321,14 @@ def attest(manifest_file: str, provider: str, level: int, output: Optional[str])
               help="Fail unless the attestation report matches the manifest hash")
 @click.option("--crl-path", default=None, help="Path to a FileCRL JSON-Lines file for revocation checks")
 @click.option("--public-key", default=None, help="Path to a trusted raw Ed25519 public key hex file")
+@click.option("--require-transparency", is_flag=True, default=False,
+              help="Fail unless transparency evidence was independently verified")
+@click.option("--verified-transparency-entry-id", multiple=True,
+              help="Legacy entry UUID independently verified for this manifest (repeatable)")
+@click.option("--verified-transparency-receipt-hash", multiple=True,
+              help="SHA-256 hex of a raw COSE receipt independently verified for this manifest (repeatable)")
+@click.option("--transparency-evidence-manifest-id",
+              help="Manifest ID to which the independent transparency appraisal was bound")
 @click.option(
     "--signature-only",
     is_flag=True,
@@ -334,6 +342,10 @@ def verify(
     enforce_attestation: bool,
     crl_path: Optional[str],
     public_key: Optional[str],
+    require_transparency: bool,
+    verified_transparency_entry_id: tuple[str, ...],
+    verified_transparency_receipt_hash: tuple[str, ...],
+    transparency_evidence_manifest_id: Optional[str],
     signature_only: bool,
     output: Optional[str],
 ) -> None:
@@ -354,6 +366,10 @@ def verify(
         enforce_hitl=enforce_hitl,
         enforce_attestation=enforce_attestation,
         trusted_keys=trusted_keys,
+        require_transparency=require_transparency,
+        verified_transparency_entry_ids=set(verified_transparency_entry_id),
+        verified_transparency_receipt_hashes=set(verified_transparency_receipt_hash),
+        transparency_evidence_manifest_id=transparency_evidence_manifest_id,
         strict_artifact_verification=not signature_only,
     )
 

@@ -777,9 +777,48 @@ def test_engine_verifies_a_cose_manifest():
 
 def test_engine_warns_when_no_receipt_is_attached():
     result = verify_manifest(
-        sign_cose_sign1(base_manifest(), KP), base_context(), store()
+        sign_cose_sign1(base_manifest(), KP),
+        base_context(require_transparency=True),
+        store(),
     )
     assert any("transparency receipt" in w for w in result.warnings)
+
+
+def test_required_cose_receipt_missing_is_incomplete():
+    result = verify_manifest(
+        sign_cose_sign1(base_manifest(), KP),
+        base_context(require_transparency=True),
+        store(),
+    )
+    assert result.result == OverallResult.INCOMPLETE
+    assert result.transparency_verified is False
+
+
+def test_attacker_supplied_cose_receipt_is_not_treated_as_verified():
+    envelope = attach_receipt(
+        sign_cose_sign1(base_manifest(), KP), b"attacker-controlled-receipt"
+    )
+    result = verify_manifest(
+        envelope, base_context(require_transparency=True), store()
+    )
+    assert result.result == OverallResult.UNVERIFIABLE
+    assert result.transparency_verified is False
+
+
+def test_independently_verified_cose_receipt_satisfies_requirement():
+    receipt = b"trusted-transparency-service-receipt"
+    envelope = attach_receipt(sign_cose_sign1(base_manifest(), KP), receipt)
+    result = verify_manifest(
+        envelope,
+        base_context(
+            require_transparency=True,
+            verified_transparency_receipt_hashes={hashlib.sha256(receipt).hexdigest()},
+            transparency_evidence_manifest_id=base_manifest()["manifest_id"],
+        ),
+        store(),
+    )
+    assert result.result == OverallResult.VALID
+    assert result.transparency_verified is True
 
 
 def test_engine_reports_unverifiable_without_trusted_keys():

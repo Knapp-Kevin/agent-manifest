@@ -1425,6 +1425,7 @@ Access control for confidential payloads: Tool call payload fields in TRACE enve
 A `VALID` result means all of the following are true:
 
 - The manifest signature is valid under RFC 8785 canonicalization and the manifest is present in the transparency log. Before checking the issuer signature, the verifier MUST apply the `hitl_record.approvals` normalization rule from section 3.6 (replace `hitl_record.approvals` with `[]` in the signing pre-image); approvals are verified separately against their own `approval_signature`s
+- Receipt presence alone MUST NOT satisfy the transparency-log condition. A verifier MUST authenticate the receipt or inclusion evidence against its configured Transparency Service trust policy. In particular, a receipt carried in a COSE unprotected header is untrusted input until that independent appraisal succeeds.
 - The TEE attestation report confirms the manifest hash is bound to the hardware measurement
 - All fields specified in `required_fields` match their running artifacts. For `decision_trace`, `EXTENDED` satisfies this condition and `MISMATCH` does not; see Section 3.2.7.1
 - The manifest has not expired

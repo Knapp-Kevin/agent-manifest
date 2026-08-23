@@ -170,6 +170,60 @@ def test_cli_verify_bound_artifacts_without_runtime_hashes_is_incomplete(tmp_pat
     assert any("artifact bindings NOT verified" in w for w in payload["warnings"])
 
 
+def test_cli_required_transparency_missing_is_incomplete(tmp_path):
+    keypair = generate_ed25519()
+    signed_path = _write_signed_manifest(tmp_path, keypair)
+    public_path = _write_public_key(tmp_path, keypair)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "verify", str(signed_path), "--public-key", str(public_path),
+            "--signature-only", "--require-transparency",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = _json_stdout(result)
+    assert payload["result"] == "INCOMPLETE"
+    assert payload["transparency_verified"] is False
+
+
+def test_cli_verified_legacy_transparency_entry_is_valid(tmp_path):
+    keypair = generate_ed25519()
+    manifest = _signed_manifest(keypair)
+    entry_id = "rekor-cli-entry"
+    manifest["transparency_log_entry"] = {
+        "log_id": "0" * 64,
+        "log_index": 1,
+        "entry_uuid": entry_id,
+        "integrated_time": 1,
+        "inclusion_proof": {
+            "checkpoint": "signed-checkpoint",
+            "hashes": [],
+            "tree_size": 1,
+        },
+    }
+    signed_path = tmp_path / "signed-with-receipt.json"
+    signed_path.write_text(json.dumps(manifest))
+    public_path = _write_public_key(tmp_path, keypair)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "verify", str(signed_path), "--public-key", str(public_path),
+            "--signature-only", "--require-transparency",
+            "--verified-transparency-entry-id", entry_id,
+            "--transparency-evidence-manifest-id", manifest["manifest_id"],
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = _json_stdout(result)
+    assert payload["result"] == "VALID"
+    assert payload["transparency_verified"] is True
+
+
 # ---------------------------------------------------------------------------
 # Command surface: the documented invocation must be the real one
 # ---------------------------------------------------------------------------

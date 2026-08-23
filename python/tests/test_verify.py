@@ -22,6 +22,7 @@ NOW = datetime.now(timezone.utc)
 FUTURE = (NOW + timedelta(days=90)).isoformat().replace("+00:00", "Z")
 PAST = (NOW - timedelta(days=1)).isoformat().replace("+00:00", "Z")
 SHA = "sha256:" + "a" * 64
+TRANSPARENCY_ENTRY_ID = "rekor-entry-123"
 
 # Module-level signing key - the verifier is fail-closed, so VALID results
 # require a signed manifest and the matching trusted key in the context.
@@ -81,6 +82,22 @@ def store():
     return RevocationStore()
 
 
+def attach_transparency_entry(manifest):
+    """Attach a structurally valid post-signing Rekor entry."""
+    manifest["transparency_log_entry"] = {
+        "log_id": "0" * 64,
+        "log_index": 1,
+        "entry_uuid": TRANSPARENCY_ENTRY_ID,
+        "integrated_time": int(NOW.timestamp()),
+        "inclusion_proof": {
+            "checkpoint": "signed-checkpoint",
+            "hashes": [],
+            "tree_size": 1,
+        },
+    }
+    return manifest
+
+
 def hitl_approval(approved_at, approved_scope, **overrides):
     approval = {
         "approver_id": APPROVER_ID,
@@ -108,6 +125,52 @@ def test_valid_all_match():
     assert result.fields_verified.system_prompt == FieldResult.MATCH
     assert result.fields_verified.policy_bundle == FieldResult.MATCH
     assert result.mismatch_details == []
+
+
+def test_required_transparency_missing_is_incomplete():
+    result = verify_manifest(
+        base_manifest(), base_context(require_transparency=True), store()
+    )
+    assert result.result == OverallResult.INCOMPLETE
+    assert result.transparency_verified is False
+
+
+def test_present_but_untrusted_transparency_entry_is_unverifiable():
+    result = verify_manifest(
+        attach_transparency_entry(base_manifest()),
+        base_context(require_transparency=True),
+        store(),
+    )
+    assert result.result == OverallResult.UNVERIFIABLE
+    assert result.transparency_verified is False
+
+
+def test_independently_verified_transparency_entry_satisfies_requirement():
+    result = verify_manifest(
+        attach_transparency_entry(base_manifest()),
+        base_context(
+            require_transparency=True,
+            verified_transparency_entry_ids={TRANSPARENCY_ENTRY_ID},
+            transparency_evidence_manifest_id=base_manifest()["manifest_id"],
+        ),
+        store(),
+    )
+    assert result.result == OverallResult.VALID
+    assert result.transparency_verified is True
+
+
+def test_verified_transparency_entry_cannot_be_replayed_to_another_manifest():
+    result = verify_manifest(
+        attach_transparency_entry(base_manifest()),
+        base_context(
+            require_transparency=True,
+            verified_transparency_entry_ids={TRANSPARENCY_ENTRY_ID},
+            transparency_evidence_manifest_id="018f4a3b-2c1d-7e5f-a8b9-ffffffffffff",
+        ),
+        store(),
+    )
+    assert result.result == OverallResult.UNVERIFIABLE
+    assert result.transparency_verified is False
 
 
 @pytest.mark.parametrize(
@@ -693,9 +756,15 @@ def test_level_2_accepts_hardware_key_for_high_risk_approval():
             approval_method="hardware-key",
         )],
     })
+    attach_transparency_entry(m)
     result = verify_manifest(
         m,
-        base_context(enforce_hitl=True, conformance_level=2),
+        base_context(
+            enforce_hitl=True,
+            conformance_level=2,
+            verified_transparency_entry_ids={TRANSPARENCY_ENTRY_ID},
+            transparency_evidence_manifest_id=m["manifest_id"],
+        ),
         store(),
     )
     assert result.fields_verified.hitl_record == HitlResult.APPROVED

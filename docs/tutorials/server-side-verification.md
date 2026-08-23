@@ -186,6 +186,15 @@ if result.result == OverallResult.MISMATCH:
 
 An auditor that intentionally wants to authenticate only the manifest document, without making any claim about the running artifacts, can construct `VerificationContext(strict_artifact_verification=False)`. This is an explicit scope reduction: callers must label the result as signature-only and must not use it as an authorization decision about the deployed agent.
 
+For production/Level 1+ verification, transparency is also fail-closed. First
+appraise the Rekor entry or SCITT receipt against your trusted transparency
+service, then pass the verified legacy `entry_uuid` in
+`verified_transparency_entry_ids` or the SHA-256 hex digest of the raw COSE
+receipt in `verified_transparency_receipt_hashes`, together with the appraised
+manifest ID in `transparency_evidence_manifest_id`. Receipt presence alone never
+sets `transparency_verified`: COSE receipts live in an unprotected header and
+are attacker-malleable until independently verified.
+
 ---
 
 ## FastAPI middleware that gates requests on manifest ID

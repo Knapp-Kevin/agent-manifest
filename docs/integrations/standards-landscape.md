@@ -11,8 +11,24 @@ specification.
 
 ## How the records relate
 
-![Four-layer standards integration map showing discovery, deployment evidence,
-decision-time verification, and runtime evidence](../assets/standards-integration-landscape.svg)
+In simple terms:
+
+1. **Discovery records say what the agent claims to be.** The registration
+   record and Agent Card identify the owner, endpoint, skills, and protocols.
+2. **Build records say what was approved.** The BOM, build provenance, and
+   platform evidence are linked by exact digest from the Agent Manifest.
+3. **A relying party makes the decision.** It checks the credential and the
+   exact manifest, then admits, restricts, or blocks the agent.
+4. **Runtime records say what happened next.** TRACE or OCSF evidence links each
+   action back to the exact manifest and agent instance that was admitted.
+
+<a href="../assets/standards-integration-landscape.svg" target="_blank">
+  <img src="../assets/standards-integration-landscape.svg"
+       alt="Four-layer standards integration map showing discovery, deployment evidence, decision-time verification, and runtime evidence">
+</a>
+
+**[Open the diagram full size](../assets/standards-integration-landscape.svg)**
+for readable labels. Select the image to open it in a new tab.
 
 The arrows are references, not schema ownership transfers. Agent Manifest binds
 the digests and identifiers needed to verify a deployment. It does not copy the
@@ -55,6 +71,12 @@ does not prove.
 
 ### Browse integrations and runnable demos
 
+- [cA2A cross-operator delegation](https://github.com/agentrust-io/integrations/tree/main/integrations/agentrust-ca2a-cross-operator)
+  is a runnable 12-check tutorial. It shows one agent giving another agent a
+  smaller set of permissions, the receiving agent applying its own policy, and
+  an auditor checking the delegation and evidence later. Its SEV-SNP evidence is
+  synthetic, so it demonstrates the protocol without claiming a live hardware
+  run.
 - [AgenTrust demos](https://agentrust-io.com/demos/) provides ten runnable
   policy, attestation, TRACE, and model-custody demonstrations that need no
   confidential-computing hardware.

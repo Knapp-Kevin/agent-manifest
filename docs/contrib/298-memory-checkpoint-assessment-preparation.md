@@ -1,11 +1,11 @@
 # MemoryCheckpointAssessment/0.1 preparation record
 
-Status: maintainer-authorized implementation in fork validation
+Status: maintainer-authorized implementation in current-upstream fork validation
 
 Upstream tracker: `agentrust-io/agent-manifest#298`
 Current implementation branch: `feat/memory-checkpoint-assessment-298-applicability`
 Prior feature branch: `feat/memory-checkpoint-assessment-298`
-Fork-only validation PR: `Knapp-Kevin/agent-manifest#1`
+Fork-only validation PR: `Knapp-Kevin/agent-manifest#2`
 
 ## Current upstream boundary
 
@@ -15,9 +15,9 @@ https://github.com/agentrust-io/agent-manifest/issues/298#issuecomment-547037130
 
 The implementation may therefore proceed.
 
-We are still intentionally keeping the current changes on the fork until the revised implementation is adversarially reviewed and the repository validation gates are green. Maintainer authorization to proceed is not treated as a reason to skip our own evidence boundary.
+We are still intentionally keeping the current changes on the fork until the revised implementation is adversarially reviewed and the repository validation gates are green against current upstream. Maintainer authorization to proceed is not treated as a reason to skip our own evidence boundary.
 
-Do not retarget the existing fork-only draft PR upstream. It remains a CI surface for the fork. A future upstream PR should be newly prepared from the validated implementation state.
+Do not retarget either fork-only validation PR upstream. A future upstream PR should be newly prepared from the validated implementation state.
 
 ## Confirmed architecture
 
@@ -69,7 +69,7 @@ Those are policy/applicability failures, not evidence-validation failures.
 
 The implementation line contains:
 
-- `docs/memory-checkpoint-assessment.md`, now aligned to the reconciled design;
+- `docs/memory-checkpoint-assessment.md`, aligned to the reconciled design;
 - `docs/contrib/298-maintainer-feedback-reconciliation.md`;
 - `docs/contrib/298-adversarial-contract-review.md`;
 - `docs/contrib/298-memory-checkpoint-assessment-design-reconciled.md`;
@@ -80,6 +80,27 @@ The implementation line contains:
 - focused harness, hardening, artifact-shape, vector, canonicalization-dependency, and gate tests;
 - deterministic public reference vectors;
 - two independently shaped deterministic retriever fixtures.
+
+## Current-upstream synchronization
+
+The branch has been merged with `agentrust-io/agent-manifest` main at:
+
+`eb747f5fd610a8d7fa360e52faaea5db578e6b34`
+
+through fork-only integration PR `Knapp-Kevin/agent-manifest#3`.
+
+This matters because current upstream contains 23 commits beyond the prior fork baseline, including security-verifier changes, CLI changes, governance/release changes, and partial corrections to the shared RFC 8785 canonicalizer.
+
+The earlier pre-sync fork validation was green:
+
+- CI run `33327953937` passed all lanes;
+- CodeQL run `33327953923` passed;
+- Python 3.11 Ubuntu collected 1238 tests: `1229 passed, 6 skipped, 3 xfailed`;
+- total coverage 89.61 percent;
+- `_memory_assessment.py` coverage 93 percent;
+- `_memory_assessment_gate.py` coverage 87 percent.
+
+Those results establish the reconciled implementation was internally sound before the upstream merge. They are not the final submission evidence. Final evidence must come from the post-sync head.
 
 ## Important limits still preserved
 
@@ -95,7 +116,9 @@ A standalone assessment proves the presented run. It does not prove that no conf
 
 ### Canonicalization
 
-Agent Manifest issue #322 remains an interoperability dependency. The harness reuses the repository canonicalizer and carries strict expected-failure tests for known RFC 8785 divergences. Do not claim independent cross-implementation RFC 8785 portability until #322 is resolved.
+Agent Manifest issue #322 remains an interoperability dependency, but the dependency has narrowed on current upstream. UTF-16 object-key ordering and exponent normalization are now corrected on `main` and are ordinary passing assessment-boundary tests. U+2028 over-escaping remains unresolved, so one strict expected-failure test retains that live defect.
+
+Do not claim independent cross-implementation RFC 8785 portability for assessment inputs exercising the unresolved escaping axis until #322 is fully resolved.
 
 ### TRACE/runtime scope
 
@@ -103,10 +126,10 @@ TRACE and runtime-evidence integration remain separate follow-on work. They must
 
 ## Validation sequence before upstream submission
 
-1. inspect the applicability implementation and focused tests;
-2. run focused memory-assessment tests;
-3. run Ruff, strict mypy, Bandit, pip-audit, build/twine, and the supported Python/OS test matrix;
-4. preserve the strict #322 expected-failure guards;
+1. run focused memory-assessment and applicability tests after the current-upstream merge;
+2. run Ruff, strict mypy, Bandit, pip-audit, build/twine, AGT governance, and the supported Python/OS test matrix;
+3. require CodeQL to pass;
+4. preserve the one live strict #322 expected-failure guard and require the two resolved guards to pass normally;
 5. inspect documentation/schema diffs for unintended normative scope growth;
 6. only then prepare a narrow upstream PR.
 

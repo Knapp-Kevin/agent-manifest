@@ -214,6 +214,8 @@ class StateConditionedDifferentiationProbe(ProbeCommon):
 
     @model_validator(mode="after")
     def _require_expectation(self) -> "StateConditionedDifferentiationProbe":
+        if self.context_a == self.context_b:
+            raise ValueError("state-conditioned probes require distinct context_a and context_b")
         if not (
             self.a_required_keys
             or self.a_forbidden_keys
@@ -240,6 +242,9 @@ class ProbeSuite(AssessmentModel):
 
     @model_validator(mode="after")
     def _require_gating_probe(self) -> "ProbeSuite":
+        probe_ids = [probe.probe_id for probe in self.probes]
+        if len(probe_ids) != len(set(probe_ids)):
+            raise ValueError("probe suites require unique probe_id values")
         if not any(probe.required for probe in self.probes):
             raise ValueError("probe suites require at least one required probe")
         return self
@@ -393,6 +398,9 @@ def _ordered_identity(
     ranks = [item.rank for item in ordered]
     if len(ranks) != len(set(ranks)):
         raise ValueError("retrieval result contains duplicate ranks")
+    item_keys = [item.item_key for item in ordered]
+    if len(item_keys) != len(set(item_keys)):
+        raise ValueError("retrieval result contains duplicate item_key values")
     return tuple(
         (
             item.item_key,
@@ -434,6 +442,8 @@ class AssessmentHarness:
     ) -> MemoryCheckpointAssessment:
         profile = adapter.profile.model_copy(deep=True)
         suite_snapshot = suite.model_copy(deep=True)
+        baseline_state = adapter.state_reference(baseline_state_name).model_copy(deep=True)
+        candidate_state = adapter.state_reference(candidate_state_name).model_copy(deep=True)
         cache: dict[
             tuple[str, str], tuple[tuple[RetrievedItem, ...], RepeatabilityEvidence]
         ] = {}
@@ -526,14 +536,20 @@ class AssessmentHarness:
                 for result in results
             )
         )
+        runtime_observation = adapter.runtime_observation()
+        if (
+            adapter.state_reference(baseline_state_name) != baseline_state
+            or adapter.state_reference(candidate_state_name) != candidate_state
+        ):
+            raise RuntimeError("adapter state reference changed during assessment")
         return MemoryCheckpointAssessment(
-            baseline_state=adapter.state_reference(baseline_state_name),
-            candidate_state=adapter.state_reference(candidate_state_name),
+            baseline_state=baseline_state,
+            candidate_state=candidate_state,
             probe_suite_digest=canonical_model_hash(suite_snapshot),
             retriever_profile_digest=canonical_model_hash(profile),
             assessed_at=assessed_at or datetime.now(timezone.utc),
             material_access=material_access,
-            runtime_observation=adapter.runtime_observation(),
+            runtime_observation=runtime_observation,
             invocation_evidence=tuple(invocation_evidence.values()),
             probe_results=tuple(results),
             coverage=coverage,

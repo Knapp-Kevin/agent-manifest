@@ -132,9 +132,9 @@ In particular, `attested-run-only` must not be represented as cryptographically 
 
 ## Canonicalization dependency
 
-Assessment digests reuse the repository canonicalization primitive rather than inventing a second algorithm. Agent Manifest issue #322 remains open, so these digests must not yet be described as independently RFC 8785-portable across implementations.
+Assessment digests reuse the repository canonicalization primitive rather than inventing a second algorithm. Current upstream `main` has already corrected the UTF-16 object-key ordering and exponent-formatting defects originally tracked by Agent Manifest issue #322, so those assessment-boundary guards are now ordinary passing regression tests.
 
-Strict expected-failure tests keep that dependency visible.
+Issue #322 remains open because the shared canonicalizer still over-escapes U+2028. One strict expected-failure assessment test retains that live interoperability dependency. Until the remaining RFC 8785 defect is resolved, assessment digests must not be described as independently portable across conformant implementations for inputs that exercise the unresolved escaping axis.
 
 ## First contribution boundary
 
@@ -162,6 +162,6 @@ It must not:
 
 1. implement the confirmed applicability contract on the fork;
 2. run focused adversarial tests;
-3. run full repository validation against the revised branch;
+3. run full repository validation against current upstream;
 4. review schema and documentation diffs for unintended scope growth;
 5. prepare a narrow upstream PR only after the fork evidence is clean.

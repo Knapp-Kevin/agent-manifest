@@ -168,6 +168,11 @@ Verifier requirements:
 - MUST check `version` before verifying. If the version is unsupported, MUST return `INCOMPATIBLE_VERSION` rather than silently misinterpreting fields.
 - SHOULD support at least the current and one prior minor version.
 
+<!-- CHANGED: #315 phase 5 - announce the v0.1 issuance end date -->
+**Issuing v0.1 manifests ends 2026-11-30.** From that date the reference implementation produces v0.2 COSE envelopes only, and a producer SHOULD NOT set `version` to `"0.1"`.
+
+**Verifying v0.1 manifests is not deprecated and has no end date.** Manifests are audit records under retention obligations that outlast their validity by years, so a verifier that stopped reading them would destroy evidence rather than remove code. `INCOMPATIBLE_VERSION` stays reserved for versions a verifier genuinely cannot interpret, never for v0.1.
+
 Compatibility matrix:
 
 | Producer version | Verifier supports | Result |
@@ -396,6 +401,9 @@ Deliberately open. Whether Level 2 conformance should require `result: passed`, 
 The policy bundle hash covers the complete Cedar policy set, including all policy templates and entity schemas. The `enforcement_mode` field is normative - a verifying party MUST reject a manifest whose `enforcement_mode` is `advisory` when the context requires `enforce`. This field aligns with cMCP's `enforcement_mode` attestation field.
 
 For `policy_language: composite`, the `hash` field MUST be a Merkle root over the hashes of each sub-bundle, sorted by policy language identifier in lexicographic order (`cedar`, `rego`, `yaml-agt`). Each sub-bundle MUST be hashed independently using the same hash algorithm as the manifest. The `agt_version` field MUST reference the AGT version used to assemble the composite bundle, even if individual sub-bundles were produced by other tools.
+
+<!-- CHANGED: #149 - pin the composite Merkle leaf encoding, which ADR-0003 defined for 3.2.3 and 3.2.5 but not here -->
+The composite tree is constructed per ADR-0003, and **`leaf_data` for it is the raw digest bytes of each sub-bundle hash**: the bytes the hash algorithm produces, not the `sha256:`-prefixed hex string and not a JSON descriptor. Each leaf is therefore `SHA-256(0x00 || <raw digest bytes>)`. This is normative rather than editorial: all three readings satisfy "a Merkle root over the hashes of each sub-bundle", they produce different roots from identical inputs, and a verifier holding a manifest cannot tell which one it is checking.
 
 AGT policy scope identifiers use the form `<namespace>:<resource-type>:<action>`, e.g., `finance:ledger:write`. For the full scope identifier registry, refer to the AGT specification.
 
@@ -1216,9 +1224,9 @@ The standard cryptographic profile uses the following primitives:
 
 ##### 4.1.1 Merkle Tree Domain Separation <!-- CHANGED: CRYPTO-005 - explicit domain separation per RFC 9162 to prevent length-extension attacks -->
 
-All Merkle tree constructions in this specification (corpus `merkle_root`, tool `catalog_hash`) MUST use the RFC 9162 / RFC 6962 domain-separated hashing convention:
+All Merkle tree constructions in this specification MUST use the RFC 9162 / RFC 6962 domain-separated hashing convention: <!-- CHANGED: #337 - the parenthetical named two of five constructions and went stale twice; the per-section definitions are now the single source -->
 
-- Leaf hash: `SHA-256(0x00 || leaf_data)` where `leaf_data` is the per-item input bytes as defined in the relevant section (section 3.2.3 for catalog, section 3.2.5.1 for corpus).
+- Leaf hash: `SHA-256(0x00 || leaf_data)`, where `leaf_data` is defined by the section specifying that construction.
 - Interior node hash: `SHA-256(0x01 || left_child_hash || right_child_hash)`.
 
 The `0x00` and `0x01` domain separation prefixes prevent second-preimage attacks that are possible with plain Merkle-Damgard SHA-256 trees lacking domain separation (as demonstrated in the Certificate Transparency literature). This construction is referenced in RFC 9162 Section 2.1.
@@ -1296,6 +1304,7 @@ Content-Type: application/json
     "verifier_id": "<SPIFFE URI of verifying party>  -- OPTIONAL",
     "required_fields": ["system_prompt", "policy_bundle", "tool_manifest"],
     "enforce_hitl": "<boolean>  -- OPTIONAL, default false",
+    "approver_public_keys": "<object mapping approver_id to trusted base64url Ed25519 public key>  -- REQUIRED when a HITL approval is evaluated",
     "enforce_attestation": "<boolean>  -- OPTIONAL, default false",
     "min_slsa_level": "1 | 2 | 3 | 4  -- OPTIONAL"
   }
@@ -1356,7 +1365,7 @@ A service that receives no `challenge_nonce` returns a result without one, and a
     "decision_trace": "MATCH | EXTENDED | MISMATCH | NOT_BOUND  -- REQUIRED",
     "supply_chain": "MATCH | MISMATCH | NOT_BOUND  -- REQUIRED",
     "delegation_chain": "VALID | INVALID | NOT_PRESENT | UNVERIFIABLE  -- REQUIRED",
-    "hitl_record": "APPROVED | EXPIRED | NOT_REQUIRED | MISSING | APPROVAL_INSUFFICIENT  -- REQUIRED"
+    "hitl_record": "APPROVED | EXPIRED | NOT_REQUIRED | MISSING | APPROVAL_INSUFFICIENT | INVALID | UNVERIFIABLE  -- REQUIRED"
   },
   "configuration_assurance": "PASSED | FLAGGED | NOT_ASSESSED  -- REQUIRED",
   "mismatch_details": [
@@ -1392,6 +1401,8 @@ A service that receives no `challenge_nonce` returns a result without one, and a
 
 `hitl_record` returns `APPROVAL_INSUFFICIENT` when an approval exists but does not meet the `approval_method` requirement for the declared `risk_tier` (e.g., `software-key` approval on a `high` risk tier operation at Level 2).
 
+`hitl_record` returns `INVALID` when an approval's own signature is malformed or does not verify over the current `manifest_id`, `approver_id`, `approved_at`, and exact `approved_scope`. It returns `UNVERIFIABLE` when the verifier has no trusted public key for the approval's `approver_id`. Neither state permits an overall `VALID` result. A manifest or COSE signature does not authenticate approval entries, which attach after issuance and MUST be verified independently.
+
 `challenge_nonce` and `verification_context_hash` bind a result to the request that produced it; see section 5.1.2 for how a relying party checks them and why a `verified_at` timestamp is not a substitute.
 
 The `correlation` object is what a consumer joins this result to runtime evidence with, so the two identities and the exact manifest they came from travel together rather than being reassembled by the consumer. It is always present when the input contains the REQUIRED `agent_id`; a verifier reporting malformed input that omits `agent_id` cannot construct it. `agent_instance_uid` is `null` on a manifest that governs more than one run; see section 6.4.2 for what a producer does in that case.
@@ -1422,12 +1433,17 @@ Access control for confidential payloads: Tool call payload fields in TRACE enve
 A `VALID` result means all of the following are true:
 
 - The manifest signature is valid under RFC 8785 canonicalization and the manifest is present in the transparency log. Before checking the issuer signature, the verifier MUST apply the `hitl_record.approvals` normalization rule from section 3.6 (replace `hitl_record.approvals` with `[]` in the signing pre-image); approvals are verified separately against their own `approval_signature`s
+- Receipt presence alone MUST NOT satisfy the transparency-log condition. A verifier MUST authenticate the receipt or inclusion evidence against its configured Transparency Service trust policy. In particular, a receipt carried in a COSE unprotected header is untrusted input until that independent appraisal succeeds.
 - The TEE attestation report confirms the manifest hash is bound to the hardware measurement
 - All fields specified in `required_fields` match their running artifacts. For `decision_trace`, `EXTENDED` satisfies this condition and `MISMATCH` does not; see Section 3.2.7.1
 - The manifest has not expired
 - The manifest has not been revoked (revocation status endpoint MUST be checked before returning VALID)
 - If `enforce_hitl` is `true`, at least one HITL approval is present, valid, not expired, and meets the `approval_method` requirement for the declared `risk_tier`
 - If `enforce_attestation` is `true`, `audit_key_sealed` is `true` in the attestation block
+
+**Issuer key authorization is not covered by a `VALID` result unless the verifier configures it (non-normative implementation note).** `signature.key_id` sits outside the signing pre-image (section 3.6), so it identifies a key without authorizing one. The reference SDK checks that the signing key is authorized for the declared `issuer` only when `VerificationContext.trusted_key_issuers` is populated; that field defaults to an empty map, and with it empty the check returns without evaluating anything. A deployment that does not populate it therefore obtains `VALID` results in which nothing has confirmed the signing key belongs to the claimed issuer.
+
+This section does not yet state a normative requirement either way, and the reference implementation's behaviour is not a substitute for one. Whether a verifier MUST reject a key that is not resolved through a defined authorization path, and MUST reject issuer authorization derived from an identifier the attested subject controls, is open and tracked in issue #325. Populate `trusted_key_issuers` in the meantime for any deployment where issuer and subject are not the same party.
 
 A `VALID` result that carries no `challenge_nonce` is a statement about the manifest at the moment the service evaluated it, and nothing binds it to any particular request. It MAY be relied on for a decision whose correctness does not depend on freshness, such as an audit reading of a historical manifest. It MUST NOT be relied on to gate an action, because a result that is not bound to a live challenge is one an attacker may present again later. See section 5.1.2.
 

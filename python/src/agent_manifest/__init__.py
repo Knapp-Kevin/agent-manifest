@@ -53,8 +53,10 @@ from ._attestation import (
 )
 from ._snp_verify import (
     SIG_ALGO_ECDSA_P384_SHA384, SNP_OFFSETS, SNP_REPORT_LEN,
-    SnpReport, SnpVerificationError,
-    parse_snp_report, parse_hcl_report, load_snp_cert_chain,
+    PLATFORM_INFO_BITS,
+    SnpReport, SnpPlatformInfo, SnpVerificationError,
+    parse_snp_report, parse_platform_info, appraise_platform_info,
+    parse_hcl_report, load_snp_cert_chain,
     verify_snp_signature, verify_vcek_chain, verify_runtime_data_binding,
     fetch_vcek,
 )
@@ -151,8 +153,10 @@ __all__ = [
     "TPMProvider", "AzureCVMProvider", "SEVSNPProvider", "TDXProvider", "OPAQUEProvider",
     "verify_attestation_chain", "ChainVerificationResult", "SignatureStatus",
     "SIG_ALGO_ECDSA_P384_SHA384", "SNP_OFFSETS", "SNP_REPORT_LEN",
-    "SnpReport", "SnpVerificationError",
-    "parse_snp_report", "parse_hcl_report", "load_snp_cert_chain",
+    "PLATFORM_INFO_BITS",
+    "SnpReport", "SnpPlatformInfo", "SnpVerificationError",
+    "parse_snp_report", "parse_platform_info", "appraise_platform_info",
+    "parse_hcl_report", "load_snp_cert_chain",
     "verify_snp_signature", "verify_vcek_chain", "verify_runtime_data_binding",
     "fetch_vcek",
     "verify_cert_chain", "CertChainError",

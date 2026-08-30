@@ -55,6 +55,10 @@ A `fail` is not rewritten into an invalid checkpoint or an invalid assessment. I
 
 An `indeterminate` result also remains its own state. It means the behavioral property was not established. The gate fails closed operationally without pretending that an unestablished result is the same thing as a demonstrated behavioral failure.
 
+Only probes marked `required` contribute to the aggregate behavioral result and therefore to this gate. Non-required probes are diagnostic. A non-required confidentiality probe can fail while the aggregate result remains `pass`; that failure is still recorded in `probe_results` and raises `security_flags.contains_confidentiality_failure`. A policy that intends confidentiality failures to block approval should mark those probes required and may also inspect the security flag directly.
+
+When several applicable assessments are presented, any applicable `fail` or `indeterminate` keeps the gate closed. If both appear, the evaluator reports both reasons rather than collapsing them into one outcome.
+
 ## Why applicability matters
 
 A control is easy to bypass if any vaguely related assessment can satisfy it. The gate therefore binds the evidence it expects.
@@ -67,6 +71,8 @@ An assessment is applicable only when it matches the policy requirements for:
 - retriever-profile digest;
 - baseline and candidate retrieval-state digests, when required;
 - assessment time window, when required.
+
+Assessment-window bounds are inclusive. Evidence timestamped exactly at `assessed_not_before` or `assessed_not_after` remains applicable.
 
 This prevents three especially important bypasses: omitting the assessment, substituting a different probe suite, or assessing under a different retriever profile.
 
@@ -99,6 +105,10 @@ Retrieval behavior is only reproducible when the load-bearing retrieval path is 
 
 A profile that claims deterministic behavior must declare a deterministic tie policy. The reference harness also records repeatability evidence and requires at least 20 trials for a result reported as stable or unstable.
 
+The typed `index_build_config` and `reranker_config` maps use string, integer, boolean, or null scalar values in 0.1. Fractional settings should be encoded in a stable string form or represented as an opaque component rather than relying on implicit numeric coercion.
+
+The harness snapshots the baseline and candidate state references before running probes and checks them again before emitting an assessment. If either reference changes during the run, no assessment artifact is emitted. This prevents retrieval evidence gathered from one state from being bound to a later checkpoint reference.
+
 ## Initial probe set
 
 The 0.1 harness covers four behavioral invariants:
@@ -115,11 +125,15 @@ A declared continuity, identity, or safety anchor should remain retrievable with
 
 A retrieval must not expose an item key or scope label that the probe declares forbidden. Scope failures retain confidentiality severity rather than being flattened into a generic regression.
 
+Scope isolation is intentionally a negative confidentiality property. An empty retrieval contains no forbidden material, so it satisfies this probe. That does **not** establish that retrieval is otherwise healthy. A suite that needs to prove liveness or useful retrieval should also include a positive invariant such as correction precedence, anchor preservation, or state-conditioned differentiation.
+
 ### State-conditioned differentiation
 
-Contexts that are expected to retrieve differently should continue to do so, including required and forbidden item checks for each context.
+Distinct contexts that are expected to retrieve differently should continue to do so, including required and forbidden item checks for each context. The schema rejects a state-conditioned probe whose two contexts are identical.
 
-The harness uses stable logical item keys and version digests rather than semantic similarity to decide whether the same memory item persisted across states.
+Cross-state persistence is decided by stable logical item key, not semantic similarity. Item version digests are recorded and participate in repeatability fingerprints within a state, but 0.1 does not compare version digests between baseline and candidate. A content change under a stable key is therefore not, by itself, a failure of the current persistence checks.
+
+Retrieval results must also contain unique ranks and unique logical item keys. Ambiguous duplicate identities are rejected before probe evaluation.
 
 ## `indeterminate` results
 

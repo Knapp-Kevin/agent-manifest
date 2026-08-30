@@ -1,330 +1,167 @@
-# MemoryCheckpointAssessment/0.1 design draft
+# MemoryCheckpointAssessment/0.1 design
 
-> **Status: non-normative design draft for issue #298.** This document defines a proposed reference assessment artifact and harness boundary. It does not change Agent Manifest conformance or authorize checkpoint promotion.
+> **Status: non-normative implementation design for issue #298.** Maintainer feedback now explicitly authorizes implementation against the reconciled applicability model. This artifact and its reference gate do not change Agent Manifest conformance and do not grant checkpoint approval.
 
-## What this assessment does not prove
+Detailed reconciliation records live in:
 
-A `MemoryCheckpointAssessment/0.1` result is not a certification that a memory system is safe. It does not prove that stored content is true, that the assessor or signer is honest, that a model answer is correct, that a memory write was authorized, or that a checkpoint should be deployed. Agent Manifest continues to own checkpoint integrity, lineage, ordering, freshness, and update-budget checks.
+- `docs/contrib/298-maintainer-feedback-reconciliation.md`
+- `docs/contrib/298-adversarial-contract-review.md`
+- `docs/contrib/298-memory-checkpoint-assessment-design-reconciled.md`
+- `docs/contrib/298-reconciliation-verdict.md`
+- `docs/contrib/298-maintainer-confirmation-2026-08-30.md`
 
-The 0.1 claim is deliberately narrower:
+## Narrow claim
 
-> Under the bound inputs and retriever profile, the reference harness observed the declared retrieval behavior and evaluated the declared deterministic predicates according to the recorded procedure.
+`MemoryCheckpointAssessment/0.1` evaluates retrieval behavior over a candidate memory checkpoint under explicitly bound inputs, probes, and retriever configuration.
 
-The gating path never uses an LLM judge.
+It does not prove that stored content is true, that a model answer is correct, that a memory write was authorized, that the producer is honest, that the checkpoint is safe in every sense, or that the checkpoint should be deployed.
 
-## Keep three questions separate
+The deterministic gating path never uses an LLM judge. A model judge, if attached later, is diagnostic only.
 
-The design separates:
+## Five concepts that must remain separate
 
-1. **behavioral result**: did the declared retrieval predicates pass, fail, or remain indeterminate?
-2. **rerun/verifiability**: can another party obtain the bound material and reproduce or verify the run?
-3. **policy consequence**: what does a relying party do with the evidence?
+The design now treats these as distinct:
 
-These are deliberately not one enum.
+1. **Evidence validity**: is the assessment artifact well-formed and correctly bound to what it claims?
+2. **Behavioral outcome**: did the required probes produce `pass`, `fail`, or `indeterminate`?
+3. **Control applicability**: is this the assessment evidence required by the adopted approval policy for the relevant checkpoint, probe suite, retriever profile, retrieval state where required, and evidence window where required?
+4. **Approval admissibility**: does this adopted gate permit the approval action to continue?
+5. **Historical/audit state**: what actually happened, including an approval that should have been blocked?
 
-A private-store assessment may still produce a behavioral `pass` or `fail`. Lack of third-party data access limits independent rerun/verifiability; it does not retroactively change the behavioral result.
+A valid behavioral `fail` remains valid evidence. A valid `indeterminate` remains evidence that the relevant behavioral property was not established. Neither result is rewritten into another state merely to express policy consequence.
 
-## Material access
+## Artifact versus policy
 
-`material_access` describes whether a verifier can obtain the material needed to rerun the assessment:
+The load-bearing split is:
 
-- `public`
-- `restricted`
-- `unavailable_to_verifier`
+> assessment artifact = what was evaluated and what happened
+>
+> approval policy = what must have been evaluated before this approval action may occur
 
-This field does not determine `pass`, `fail`, or `indeterminate`.
+The assessment artifact does not contain deployment authority.
 
-## Deterministic capability and repeatability evidence
+The separate reference gate evaluator consumes an explicit policy requirement plus presented assessment artifacts. That evaluator reports only whether this one adopted gate is satisfied. It does not approve a checkpoint.
 
-The adapter/profile declares whether it can satisfy the 0.1 deterministic contract:
+## Applicability
 
-- `deterministic`
-- `unsupported_or_unknown`
+Applicability exists to prevent silent bypass by:
 
-A declaration alone is not evidence.
+- omitting the assessment;
+- presenting an assessment for another candidate checkpoint;
+- presenting an assessment from another probe suite;
+- presenting an assessment under another retriever profile;
+- presenting another retrieval-state binding when the policy requires an exact one;
+- presenting evidence outside a policy-declared assessment window.
 
-The harness records observed repeatability:
+When an assessment does not match the adopted gate, it does not become invalid evidence. It simply does not satisfy that gate.
 
-```yaml
-repeatability:
-  trials: 20
-  distinct_orderings_observed: 1
-  observed_status: stable
-  tie_events_observed: null
-```
+No applicable assessment is therefore a policy failure, not an evidence failure.
 
-The initial reference floor is 20 identical runs per unique query/state/profile combination. This is an engineering evidence floor, not proof of mathematical determinism.
+## Adopted gate behavior
 
-A profile is eligible for the 0.1 deterministic result path only when the adapter declares deterministic capability, the profile binds an explicit deterministic tie policy, the required repeatability trials ran, and `distinct_orderings_observed == 1`.
+The reference assessment gate is pass-only:
 
-If the backend can expose tie events, the adapter records `tie_events_observed`; otherwise it records `null`. Tie observability is diagnostic. Declaring deterministic tie behavior is still required for deterministic eligibility.
+- one or more applicable `pass` results, with no presented applicable non-pass result, satisfy this gate;
+- an applicable `fail` does not satisfy the gate;
+- an applicable `indeterminate` does not satisfy the gate;
+- no applicable assessment does not satisfy the gate.
 
-The terms `verified` and `attested-run-only` are intentionally avoided.
+`pass` never grants checkpoint approval. It only satisfies this one adopted control. All other approval requirements remain independent.
 
-## Configuration profile and state-specific retrieval material
+If multiple applicable assessments are presented, any presented applicable `fail` or `indeterminate` keeps the gate closed. The 0.1 artifact does not prove that no other conflicting assessment was performed and withheld. Completeness or anti-selective-disclosure guarantees require a later registry or transparency mechanism.
 
-The retriever **configuration profile** is content-addressed separately from the baseline and candidate retrieval states.
+## Historical preservation
 
-The profile includes configuration that should stay fixed across the comparison:
+A control violation must remain auditable.
 
-- implementation identity and version/source revision;
-- embedding model identity and immutable revision/digest when available;
-- quantization/precision mode;
-- tokenizer identity/version where applicable;
-- query normalization/preprocessing;
-- similarity/distance function;
-- index implementation and build configuration;
-- namespace/scope/tenant filtering rules;
-- top-k and truncation rules;
-- reranker identity/configuration;
-- deterministic tie policy;
-- deterministic seeds where applicable;
-- harness version;
-- adapter version.
+If a checkpoint is cryptographically sound and an assessment is valid, but an approval occurs despite an applicable non-passing result, the system must remain capable of representing all of those facts. Rewriting the checkpoint or assessment into invalidity would destroy the evidence needed to prove the governance violation.
 
-Opaque components are marked opaque. A profile digest proves only which declaration is bound; it does not prove that the running retriever matched that declaration.
+## Behavioral outcome
 
-State-specific derived material does **not** belong in the shared profile because the candidate is expected to differ from the baseline. Each state reference therefore binds its own retrieval-state evidence:
-
-```yaml
-baseline_state:
-  checkpoint_digest: "sha256:..."
-  retrieval_state_digest: "sha256:..."
-  indexed_item_count: 120
-
-candidate_state:
-  checkpoint_digest: "sha256:..."
-  retrieval_state_digest: "sha256:..."
-  indexed_item_count: 123
-```
-
-`retrieval_state_digest` may identify a derived index snapshot or another adapter-defined immutable retrieval representation when one exists.
-
-## Runtime consistency observations
-
-The artifact may record cheap execution observations that make a false declaration easier to detect on rerun, for example adapter/runtime build identity or embedding dimensionality.
-
-These observations are consistency evidence only. They are not attestation, do not prove that an opaque provider executed the declared implementation, and are not required to turn a completed private-store behavioral run into `pass` or `fail`.
-
-A later verifier that can rerun the assessment should report a profile or runtime-observation mismatch as a **verification mismatch**, not as behavioral `indeterminate`.
-
-## Stable assessment identity
-
-The harness does not infer memory identity from prose similarity.
-
-Adapters emit a stable logical assessment key plus a version/content digest:
-
-```python
-class RetrievedItem:
-    item_key: str
-    item_version_digest: str
-    rank: int
-    scope_labels: tuple[str, ...]
-```
-
-Floating retrieval scores are intentionally excluded from the load-bearing 0.1 observation contract. The four initial predicates require identity, order, and scope metadata, not cross-runtime floating-point score equality. An adapter may expose scores as non-gating diagnostics later.
-
-Probe references state where an item key is required:
-
-```yaml
-item_ref:
-  key: "account.owner-name"
-  required_in: both
-```
-
-`required_in` is one of `baseline`, `candidate`, or `both`. This distinction matters because an introduced correction can legitimately exist only in the candidate, while an anchor-continuity key must resolve in both states.
-
-If a probe requires a key in both states and the adapter cannot resolve it consistently, that probe is `indeterminate` with reason `id_churn`.
-
-Chunked/vector systems that regenerate all logical identities on reindex cannot support transition invariants unless they provide a stable external identity mapping. The 0.1 design states that limitation rather than hiding it behind semantic matching.
-
-## Tie behavior
-
-A deterministic-eligible profile must declare a deterministic tie policy unconditionally. Examples include stable lexical order by `item_key`, a stable backend comparator identified by implementation/version, or another explicit total ordering.
-
-If the backend cannot guarantee deterministic tie resolution, deterministic capability is `unsupported_or_unknown`.
-
-## Probe suite and precommitment limit
-
-A probe suite is versioned and content-addressed. The reference harness freezes the suite before executing the candidate run and refuses in-process mutation after results begin.
-
-A suite digest proves which suite was used. By itself it does **not** prove that the operator selected the suite before seeing candidate behavior. Strong operational precommitment requires an external timestamp, approval record, transparency entry, or other relying-party mechanism. 0.1 states that limit rather than fabricating one.
-
-The initial invariant classes are:
-
-1. transition invariants: correction precedence and anchor preservation;
-2. state invariants: scope isolation;
-3. paired-state invariants: state-conditioned differentiation.
-
-Each probe contains a probe ID, class, required item references, baseline preconditions when relevant, an explicit predicate, a severity class, and the expected access/scope context.
-
-### Correction precedence
-
-The probe names the superseded item and correcting item and declares the expected inclusion/order rule. The relation is supplied as test data. The harness does not infer a correction semantically.
-
-### Anchor preservation
-
-The probe declares an anchor key and baseline precondition. If the baseline precondition is not met, the result is `indeterminate` with reason `baseline_precondition_unmet`. If the baseline satisfies the precondition and the candidate violates it, the result is `fail`.
-
-### Scope isolation
-
-The probe declares active scope and forbidden item keys or scope labels. Retrieving forbidden material is `fail` with severity class `confidentiality`.
-
-The aggregate artifact surfaces:
-
-```yaml
-security_flags:
-  contains_confidentiality_failure: true
-```
-
-Scope failures are therefore not flattened into an undifferentiated behavioral regression.
-
-### State-conditioned differentiation
-
-The paired probe declares the expected item inclusion/exclusion or rank relation between two states. No opaque semantic-distance threshold is used in 0.1.
-
-## Behavioral result and indeterminate semantics
-
-Per-probe behavioral result:
+Per-probe and aggregate outcomes remain:
 
 - `pass`
 - `fail`
 - `indeterminate`
 
-Every `indeterminate` requires one or more behavioral reason codes. Initial reason codes are:
+`indeterminate` is a placeholder name for a first-class "not established" state. Maintainer feedback explicitly asks us to preserve the semantics while allowing the shared AgentTrust vocabulary to be renamed later.
 
-- `adapter_unsupported`
-- `repeatability_unstable`
-- `repeatability_not_run`
-- `baseline_precondition_unmet`
-- `id_churn`
+Material unavailability is not itself a behavioral `indeterminate` reason. A private-store run may still produce a behavioral `pass` or `fail`; material availability affects independent rerun strength.
 
-Material unavailability is **not** an indeterminate reason. A private or unavailable-to-verifier store can still produce a completed behavioral result; the limitation belongs to rerun/verifiability metadata.
+## Retriever pinning
 
-A profile/runtime mismatch discovered during independent verification is also not an indeterminate reason. It is a verification mismatch outside the behavioral result.
+The retriever profile remains content-addressed and binds the load-bearing retrieval path, including where applicable:
 
-Aggregate behavioral rule:
+- implementation identity and version/source revision;
+- embedding model identity and revision;
+- quantization or precision mode;
+- tokenizer identity;
+- query preprocessing;
+- distance metric;
+- index implementation and build configuration;
+- filtering rules;
+- top-k and truncation rules;
+- reranker identity/configuration;
+- deterministic tie policy;
+- deterministic seed;
+- adapter and harness version;
+- declared opaque components.
 
-1. any required `fail` => aggregate `fail`;
-2. otherwise any required `indeterminate` => aggregate `indeterminate`;
-3. otherwise aggregate `pass`.
+A deterministic profile must declare an explicit deterministic tie policy. The harness records repeatability evidence with an engineering floor of 20 trials per unique request/state/profile combination.
 
-The artifact records coverage:
+## Stable identity and initial probes
 
-```yaml
-coverage:
-  required_probe_count: 20
-  passed: 18
-  failed: 0
-  indeterminate: 2
-  indeterminate_rate: 0.10
-```
+The harness uses stable logical item identity and version/content digests rather than semantic similarity to decide whether the same memory item persisted across states.
 
-This prevents a mostly-indeterminate suite from looking equivalent to a useful assessment.
+The initial invariant classes remain:
 
-Cross-assessment downgrade policy is intentionally not invented inside the 0.1 artifact. A relying party may compare previous assessments separately.
+1. correction precedence;
+2. anchor preservation;
+3. scope isolation;
+4. state-conditioned differentiation.
 
-## Behavioral result is not policy
+Scope-isolation failures retain confidentiality severity rather than being flattened into generic behavioral regression.
 
-The reference harness computes evidence only. The SDK assessment path must not expose a function such as `approve_checkpoint()` or otherwise convert an assessment result into deployment authority.
+## Reproducibility and material access
 
-An informative example may show a fail-closed relying-party mapping:
+Material access currently records whether rerun material is public, restricted, or unavailable to the verifier. This remains separate from behavioral outcome.
 
-- `pass` => eligible for other approval checks;
-- `fail` => not eligible;
-- `indeterminate` => not eligible.
+Earlier maintainer feedback explicitly endorsed `public-reproducible`, `restricted-reproducible`, and `attested-run-only` as useful evidence modes. The latest confirmation did not settle the exact 0.1 serialization or authenticated producer-assertion mechanism for those modes. The current implementation therefore does not invent one.
 
-That mapping belongs in documentation/examples, not the assessment execution path. This keeps the first release non-normative in effect rather than merely labelled non-normative.
+In particular, `attested-run-only` must not be represented as cryptographically attributable until an accepted authenticated wrapper or producer assertion exists.
 
-## Lifecycle and staleness
+## Canonicalization dependency
 
-The artifact records `assessed_at`. There is no intrinsic TTL in 0.1. The evidence remains a statement about the exact bound inputs.
+Assessment digests reuse the repository canonicalization primitive rather than inventing a second algorithm. Agent Manifest issue #322 remains open, so these digests must not yet be described as independently RFC 8785-portable across implementations.
 
-Reuse is invalid when a load-bearing bound value changes, including the baseline checkpoint digest, candidate checkpoint digest, baseline/candidate retrieval-state digest, probe-suite digest, or retriever-profile digest.
+Strict expected-failure tests keep that dependency visible.
 
-A relying party may impose a maximum assessment age without changing the artifact's meaning.
+## First contribution boundary
 
-## Gaming and probe visibility
+The intended first contribution remains external and non-normative. It may include:
 
-Known public probes can be optimized against. 0.1 does not pretend otherwise.
+- typed assessment evidence models;
+- deterministic retriever adapter protocol;
+- deterministic reference harness;
+- public positive and negative vectors;
+- independently shaped retriever fixtures;
+- the separate reference applicability gate and its tests;
+- documentation of known limitations and unresolved provenance questions.
 
-The artifact should state whether the gating suite is public or restricted. Restricted or held-out operational probes can reduce gaming but reduce independent rerunnability.
+It must not:
 
-Rotated audit suites, held-out acceptance probes, and statistical/nondeterministic retrieval profiles are future work.
+- modify `spec/` unless maintainers explicitly request it;
+- add an `approve_checkpoint()` or deployment-authority API;
+- turn `pass` into approval;
+- turn `fail` into invalid evidence;
+- turn `indeterminate` into `fail`;
+- add TRACE/runtime integration to this PR;
+- invent a second signature/envelope architecture.
 
-## Cost and feasibility
+## Current implementation sequence
 
-Let `R` be the number of unique retrieval invocations across all probe/state references and `T` the repeatability trial floor. The repeatability evidence path requires approximately `R × T` retrieval calls.
-
-The reference fixture adapter requires no reindexing. Production adapters may require prebuilt baseline and candidate snapshots. The 0.1 harness does not require rebuilding an index solely to run the assessment.
-
-The artifact may record operational run statistics such as retrieval-call count and duration. Those statistics are evidence, not conformance requirements.
-
-## Illustrative artifact shape
-
-```yaml
-type: MemoryCheckpointAssessment
-version: "0.1"
-
-baseline_state:
-  checkpoint_digest: "sha256:..."
-  retrieval_state_digest: "sha256:..."
-  indexed_item_count: 8
-
-candidate_state:
-  checkpoint_digest: "sha256:..."
-  retrieval_state_digest: "sha256:..."
-  indexed_item_count: 9
-
-probe_suite_digest: "sha256:..."
-retriever_profile_digest: "sha256:..."
-assessed_at: "2026-08-20T00:00:00Z"
-material_access: restricted
-
-determinism:
-  adapter_capability: deterministic
-  trials: 20
-  distinct_orderings_observed: 1
-  observed_status: stable
-  tie_events_observed: null
-
-coverage:
-  required_probe_count: 4
-  passed: 4
-  failed: 0
-  indeterminate: 0
-  indeterminate_rate: 0.0
-
-security_flags:
-  contains_confidentiality_failure: false
-
-result: pass
-```
-
-Signing/envelope semantics remain deliberately deferred. An unsigned payload cannot prove producer provenance. The first implementation should therefore describe producer identity as metadata unless and until maintainers choose an existing AgentTrust signing/envelope primitive. The payload must not invent a second signature architecture beside the project's current COSE direction.
-
-## First implementation boundary
-
-The first implementation should include typed Pydantic models, a deterministic adapter protocol, a public deterministic fixture adapter, canonical digests that reuse existing repository primitives, and positive/negative vectors for the four initial invariants.
-
-Negative vectors should cover baseline-precondition failure, ID churn, unsupported adapter capability, unstable repeatability, scope-leak severity, tie behavior, profile/configuration change, and state-digest change.
-
-The first PR should not modify `spec/` unless maintainers explicitly request it. It should add no external dependency and no SDK promotion/approval function.
-
-## Precommitted kill criteria
-
-Abandon or materially redesign this wedge before implementation if any of the following is demonstrated:
-
-1. the artifact necessarily duplicates an existing AgentTrust normative primitive rather than composing with it;
-2. a framework-neutral stable assessment identity cannot support the four initial invariants without semantic/LLM inference;
-3. evidence cannot be separated from deployment policy in actual code;
-4. the first release requires a new signature/envelope standard;
-5. the deterministic 0.1 core cannot support at least two independently shaped retrieval implementations without framework-specific semantics dominating it;
-6. repository/layer placement changes destroy the proposed artifact boundary rather than merely moving code;
-7. a candidate can obtain `pass` while violating one of the four declared invariants under the same bound inputs and profile.
-
-## Prior-art note
-
-Issue #298 names Pulse and the Pulse paper as implementation references. Relevant lessons for this design include freezing cases before seeing candidate results, retaining stable identifiers and digests in result receipts, marking boundary checks inconclusive when execution errors prevent evaluation, and keeping retrieval evidence separate from LLM-judged answer accuracy.
-
-These are design influences, not dependencies. AgentTrust must not depend on Pulse.
+1. implement the confirmed applicability contract on the fork;
+2. run focused adversarial tests;
+3. run full repository validation against the revised branch;
+4. review schema and documentation diffs for unintended scope growth;
+5. prepare a narrow upstream PR only after the fork evidence is clean.
